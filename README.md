@@ -42,9 +42,7 @@ conda install pytorch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0 pytorch-cuda=
 conda install -c fvcore -c iopath -c conda-forge fvcore iopath -y
 conda install nvidia/label/cuda-12.4.1::cuda-toolkit -y
 # maybe restart terminal here
-sudo apt-get update
-sudo apt-get install ninja-build
-sudo apt-get install libglm-dev
+sudo apt update && sudo apt install build-essential ninja-build libglm-dev
 pip install "git+https://github.com/facebookresearch/pytorch3d.git@stable"
 pip install submodules/depth-diff-gaussian-rasterization-min/
 pip install submodules/simple-knn/
