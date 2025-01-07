@@ -40,10 +40,10 @@ Run the following commands to install it or follow their <a href="https://github
 # switch to cuda 12.4, other versions should also work
 conda install pytorch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0 pytorch-cuda=12.4 -c pytorch -c nvidia -y
 conda install -c fvcore -c iopath -c conda-forge fvcore iopath -y
-conda install nvidia/label/cuda-12.4.1::cuda-toolkit -y
-# maybe restart terminal here
-sudo apt update && sudo apt install build-essential ninja-build libglm-dev
+sudo apt update && sudo apt install build-essential
 pip install "git+https://github.com/facebookresearch/pytorch3d.git@stable"
+conda install nvidia/label/cuda-12.4.1::cuda-toolkit -y
+sudo apt update && sudo apt install libglm-dev
 pip install submodules/depth-diff-gaussian-rasterization-min/
 pip install submodules/simple-knn/
 ```
