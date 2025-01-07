@@ -28,18 +28,20 @@ It requires 48GB GPU memory to run.
 
 Clone the repo and create the environment:
 ```bash
-git clone https://github.com/KovenYu/WonderWorld.git && cd WonderWorld
-mamba create --name wonderworld python=3.10
-mamba activate wonderworld
+git clone https://github.com/midreal/WonderWorld.git && cd WonderWorld
+conda create --name ww python=3.10
+conda activate ww
 ```
 We are using  <a href="https://github.com/facebookresearch/pytorch3d" target="_blank">Pytorch3D</a> to perform rendering.
 Run the following commands to install it or follow their <a href="https://github.com/facebookresearch/pytorch3d/blob/main/INSTALL.md" target="_blank">installation guide</a> (it may take some time). We tested on `cuda=12.4`, other `cuda` versions should also work.
 
 ```bash
 # switch to cuda 12.4, other versions should also work
-mamba install pytorch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0 pytorch-cuda=12.4 -c pytorch -c nvidia
-mamba install -c fvcore -c iopath -c conda-forge fvcore iopath
+conda install nvidia/label/cuda-12.4.1::cuda-toolkit
+conda install pytorch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0 pytorch-cuda=12.4 -c pytorch -c nvidia
+conda install -c fvcore -c iopath -c conda-forge fvcore iopath
 pip install "git+https://github.com/facebookresearch/pytorch3d.git@stable"
+sudo apt-get install libglm-dev
 pip install submodules/depth-diff-gaussian-rasterization-min/
 pip install submodules/simple-knn/
 ```
@@ -65,55 +67,13 @@ wget https://github.com/THU-MIG/RepViT/releases/download/v1.0/repvit_sam.pt
 
 ### Run examples 
 
-- Example config file
-
-  To run an example, first you need to write a config. An example config `./config/example.yaml` is shown below (more examples are located at `config/more_examples`, feel free to try):
-
-  ```yaml
-  runs_dir: output/real_campus_2
-  example_name: real_campus_2
-  
-  seed: 1
-  # enable guided depth diffusion
-  depth_conditioning: True
-  
-  # use gpt to generate scene description
-  use_gpt: False
-  debug: True
-  
-  # depth model and camera/depth parameters
-  depth_model: marigold
-  camera_speed: 0.001
-  fg_depth_range: 0.015
-  depth_shift: 0.001
-  sky_hard_depth: 0.02
-  init_focal_length: 960
-  
-  # re-generate sky panorama images
-  gen_sky_image: False
-  # generate sky point cloud
-  gen_sky: False
-  
-  # enable layer-wise generation
-  gen_layer: True
-  # load previously generated gaussians
-  load_gen: False
-  ```
-
 - Run
 
-  ###### Local Visualization Setup:
+  ###### Visualization Setup:
   
-  On your local laptop, `git clone https://github.com/haoyi-duan/splat.git` and open `index_stream.html`.
-  
-  To enable interactive visualization of your results through this local web browser, follow these steps:
-  
-  - Ensure you have `'ssh'` installed on your local machine.
-  - The main program will run on server user_id@server_name
-  
-  ```shell
-  # On your local machine
-  ssh -L 7777:localhost:7777 server_name
+  ```bash
+  git clone https://github.com/midreal/splat-server.git && cd splat-server
+  python server.py
   ```
   
   ###### Main Program Running:
@@ -121,7 +81,6 @@ wget https://github.com/THU-MIG/RepViT/releases/download/v1.0/repvit_sam.pt
   On the server, run the main program:
   
   ```bash
-  # On user_id@server_name
   python run.py --example_config config/example.yaml --port 7777
   ```
   More examples are located at `config/more_examples`, feel free to try!
