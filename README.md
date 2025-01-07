@@ -11,11 +11,6 @@
 [![twitter](https://img.shields.io/twitter/url?label=Koven_Yu&url=https%3A%2F%2Ftwitter.com%2FKoven_Yu)](https://x.com/Koven_Yu/status/1835769026934673595)
 </div>
 
-
-
-https://github.com/user-attachments/assets/fdf63ae1-362d-4916-9733-71516d61a437
-
-
 > #### [WonderWorld: *Interactive* 3D Scene Generation from a Single Image](https://arxiv.org/abs/2406.09394)
 > ##### [Hong-Xing "Koven" Yu*](https://kovenyu.com/), [Haoyi Duan*](https://haoyi-duan.github.io/), [Charles Herrmann](https://scholar.google.com/citations?user=LQvi5XAAAAAJ&hl=en), [William T. Freeman](https://billf.mit.edu/), [Jiajun Wu](https://jiajunwu.com/) ("*" denotes equal contribution)
 
