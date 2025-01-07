@@ -15,7 +15,7 @@ spacy==3.7.6
 flask
 flask_cors
 flask_socketio
-openai==1.46.0
+openai
 lpips
 timm==0.6.12
 tyro
