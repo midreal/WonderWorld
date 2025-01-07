@@ -21,6 +21,12 @@
 For the installation to be done correctly, please proceed only with CUDA-compatible GPU available.
 It requires 48GB GPU memory to run.
 
+Firstly:
+```bash
+conda init
+```
+and restart terminal
+
 Clone the repo and create the environment:
 ```bash
 git clone https://github.com/midreal/WonderWorld.git && cd WonderWorld
