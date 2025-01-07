@@ -24,7 +24,7 @@ It requires 48GB GPU memory to run.
 Clone the repo and create the environment:
 ```bash
 git clone https://github.com/midreal/WonderWorld.git && cd WonderWorld
-conda create --name ww python=3.10
+conda create --name ww python=3.10 -y
 conda activate ww
 ```
 We are using  <a href="https://github.com/facebookresearch/pytorch3d" target="_blank">Pytorch3D</a> to perform rendering.
@@ -32,9 +32,9 @@ Run the following commands to install it or follow their <a href="https://github
 
 ```bash
 # switch to cuda 12.4, other versions should also work
-conda install nvidia/label/cuda-12.4.1::cuda-toolkit
-conda install pytorch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0 pytorch-cuda=12.4 -c pytorch -c nvidia
-conda install -c fvcore -c iopath -c conda-forge fvcore iopath
+conda install nvidia/label/cuda-12.4.1::cuda-toolkit -y
+conda install pytorch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0 pytorch-cuda=12.4 -c pytorch -c nvidia -y
+conda install -c fvcore -c iopath -c conda-forge fvcore iopath -y
 pip install "git+https://github.com/facebookresearch/pytorch3d.git@stable"
 sudo apt-get install libglm-dev
 pip install submodules/depth-diff-gaussian-rasterization-min/
