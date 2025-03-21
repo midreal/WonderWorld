@@ -97,6 +97,38 @@ class ModelCalls:
 
     @staticmethod
     def call_segmentation_model(image):
+        # Process the image and get inputs
         inputs = models.segment_processor(images=image, task_inputs=["semantic"], return_tensors="pt")
+        
+        # Move inputs to the same device as the model
+        device = next(models.segment_model.parameters()).device
+        inputs = {k: v.to(device) if hasattr(v, 'to') else v for k, v in inputs.items()}
+        
+        # Run model inference
         outputs = models.segment_model(**inputs)
         return outputs
+
+    @staticmethod
+    def call_segmentation_processor(image):
+
+        # Process the image with the segment processor
+        segmenter_input = models.segment_processor(image, ["semantic"], return_tensors="pt")
+        
+        # Move inputs to the model's device (CUDA if available)
+        device = next(models.segment_model.parameters()).device
+        segmenter_input = {name: tensor.to(device) if hasattr(tensor, 'to') else tensor 
+                          for name, tensor in segmenter_input.items()}
+        
+        return segmenter_input
+
+    @staticmethod
+    def call_segmentation_post_process(segment_output, image):
+
+        # Get the target size from the image (width, height)
+        target_size = [image.size[::-1]]  # Reverse the size tuple to get (height, width)
+        
+        # Call the post-processing function from the segment processor
+        pred_semantic_map = models.segment_processor.post_process_semantic_segmentation(
+            segment_output, target_sizes=target_size)[0]
+            
+        return pred_semantic_map

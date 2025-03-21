@@ -248,8 +248,8 @@ class FrameSyn(torch.nn.Module):
         #     logger=self.logger,
         # )
         # normal = normal[None].to(dtype=torch.float32)
-        from model_calls import ModelCalls
-        normal = ModelCalls.call_normal_estimator(image)
+        from model_calls_client import ModelCallsClient
+        normal = ModelCallsClient.call_normal_estimator(image)
         return normal
         
     def get_depth(self, image, archive_output=False, target_depth=None, mask_align=None, save_depth_to_cache=False, mask_farther=None, diffusion_steps=30, guidance_steps=8):
@@ -289,8 +289,8 @@ class FrameSyn(torch.nn.Module):
             depth = self.depth_model(image)['metric_depth']
         elif self.depth_model_name == "marigold":
             # Marigold
-            from model_calls import ModelCalls
-            depth = ModelCalls.call_depth_model(
+            from model_calls_client import ModelCallsClient
+            depth = ModelCallsClient.call_depth_model(
                 image,
                 denoising_steps=diffusion_steps,
                 guidance_steps=guidance_steps,
@@ -353,9 +353,9 @@ class FrameSyn(torch.nn.Module):
         if negative_prompt is None:
             negative_prompt = self.adaptive_negative_prompt + self.negative_inpainting_prompt if self.adaptive_negative_prompt != None else self.negative_inpainting_prompt
       
-        from model_calls import ModelCalls
+        from model_calls_client import ModelCallsClient
         
-        inpainted_image = ModelCalls.call_inpainting_pipeline(
+        inpainted_image = ModelCallsClient.call_inpainting_pipeline(
             prompt='' if self.use_noprompt else self.inpainting_prompt,
             negative_prompt=negative_prompt,
             image=init_image,
@@ -800,7 +800,7 @@ class FrameSyn(torch.nn.Module):
     #         self.update_current_pc(points_3d, colors)
     
 class KeyframeGen(FrameSyn):
-    def __init__(self, config, inpainter_pipeline, depth_model, mask_generator,
+    def __init__(self, config, mask_generator, inpainter_pipeline=None, depth_model=None,
                  segment_model=None, segment_processor=None, normal_estimator=None,
                  rotation_path=None, inpainting_resolution=None):
         """ This class is for generating keyframes. It inherits from FrameSyn. It implements the following tasks:
@@ -1301,11 +1301,11 @@ class KeyframeGen(FrameSyn):
         else:
             image = ToPILImage()(self.image_latest.squeeze())
             
-        segmenter_input = self.segment_processor(image, ["semantic"], return_tensors="pt")
+        from model_calls_client import ModelCallsClient
+        segmenter_input = ModelCallsClient.call_segmentation_processor(image)
         segmenter_input = {name: tensor.to("cuda") for name, tensor in segmenter_input.items()}
-        segment_output = self.segment_model(**segmenter_input)
-        pred_semantic_map = self.segment_processor.post_process_semantic_segmentation(
-                                segment_output, target_sizes=[image.size[::-1]])[0]
+        segment_output = ModelCallsClient.call_segmentation_model(**segmenter_input)
+        pred_semantic_map = ModelCallsClient.call_segmentation_post_process(segment_output, image)
         sky_mask = pred_semantic_map == 2  # 2 for ade20k, 119 for coco
         if self.sky_erode_kernel_size > 0:
             sky_mask = erosion(sky_mask.float()[None, None], 
@@ -1324,11 +1324,11 @@ class KeyframeGen(FrameSyn):
             else:
                 image = ToPILImage()(self.image_latest.squeeze())
                 
-            segmenter_input = self.segment_processor(image, ["semantic"], return_tensors="pt")
+            from model_calls_client import ModelCallsClient
+            segmenter_input = ModelCallsClient.call_segmentation_processor(image)
             segmenter_input = {name: tensor.to("cuda") for name, tensor in segmenter_input.items()}
-            segment_output = self.segment_model(**segmenter_input)
-            pred_semantic_map = self.segment_processor.post_process_semantic_segmentation(
-                                    segment_output, target_sizes=[image.size[::-1]])[0]
+            segment_output = ModelCallsClient.call_segmentation_model(**segmenter_input)
+            pred_semantic_map = ModelCallsClient.call_segmentation_post_process(segment_output, image)
             sem_map = pred_semantic_map
         # 3: floor; 6: road; 9: grass; 11: pavement; 13: earth; 26: sea; 29: field; 46: sand; 128: lake
         ground_mask = (sem_map == 3) | (sem_map == 6) | (sem_map == 9) | (sem_map == 11) | (sem_map == 13) | (sem_map == 26) | (sem_map == 29) | (sem_map == 46) | (sem_map == 128)
@@ -1368,11 +1368,11 @@ class KeyframeGen(FrameSyn):
         if pred_semantic_map is None:
             image = ToPILImage()(self.image_latest.squeeze())
             
-            segmenter_input = self.segment_processor(image, ["semantic"], return_tensors="pt")
+            from model_calls_client import ModelCallsClient
+            segmenter_input = ModelCallsClient.call_segmentation_processor(image)
             segmenter_input = {name: tensor.to("cuda") for name, tensor in segmenter_input.items()}
-            segment_output = self.segment_model(**segmenter_input)
-            pred_semantic_map = self.segment_processor.post_process_semantic_segmentation(
-                                    segment_output, target_sizes=[image.size[::-1]])[0]
+            segment_output = ModelCallsClient.call_segmentation_model(**segmenter_input)
+            pred_semantic_map = ModelCallsClient.call_segmentation_post_process(segment_output, image)
 
         unique_elements = torch.unique(pred_semantic_map)
         masks = {str(element.item()): (pred_semantic_map == element) for element in unique_elements}
