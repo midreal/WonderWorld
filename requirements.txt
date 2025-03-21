@@ -11,7 +11,7 @@ scipy
 matplotlib
 scikit-image
 accelerate
-spacy==3.7.6
+spacy
 flask
 flask_cors
 flask_socketio
