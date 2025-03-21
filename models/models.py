@@ -248,16 +248,8 @@ class FrameSyn(torch.nn.Module):
         #     logger=self.logger,
         # )
         # normal = normal[None].to(dtype=torch.float32)
-        # ToPILImage()(normal[0]/2+0.5).save("tmp/normal_my.png")
-
-        # Marigold-official-normal
-        normal = self.normal_estimator(
-            image * 2 - 1,
-            num_inference_steps=10,
-            processing_res=768,
-            output_prediction_format='pt',
-        ).to(dtype=torch.float32)  # [1, 3, H, W], [-1, 1]
-        # ToPILImage()(normal[0]/2+0.5).save("tmp/normal_new.png")
+        from model_calls import ModelCalls
+        normal = ModelCalls.call_normal_estimator(image)
         return normal
         
     def get_depth(self, image, archive_output=False, target_depth=None, mask_align=None, save_depth_to_cache=False, mask_farther=None, diffusion_steps=30, guidance_steps=8):
@@ -297,28 +289,17 @@ class FrameSyn(torch.nn.Module):
             depth = self.depth_model(image)['metric_depth']
         elif self.depth_model_name == "marigold":
             # Marigold
-            image_input = (image*255).byte().squeeze().permute(1, 2, 0)
-            image_input = Image.fromarray(image_input.cpu().numpy())
-            depth = self.depth_model(
-                image_input,
-                denoising_steps=diffusion_steps,     # optional
-                ensemble_size=1,       # optional
-                processing_res=0,     # optional
-                match_input_res=True,   # optional
-                batch_size=0,           # optional
-                color_map=None,   # optional
-                show_progress_bar=True, # optional
+            from model_calls import ModelCalls
+            depth = ModelCalls.call_depth_model(
+                image,
+                denoising_steps=diffusion_steps,
+                guidance_steps=guidance_steps,
                 depth_conditioning=self.config['depth_conditioning'],
                 target_depth=target_depth,
                 mask_align=mask_align,
                 mask_farther=mask_farther,
-                guidance_steps=guidance_steps,
-                # guidance_steps=20,
-                logger=self.logger,
+                logger=self.logger
             )
-                
-            depth = depth[None, None, :].to(dtype=torch.float32)
-            depth /= 200
 
         depth = depth + self.depth_shift
         disparity = 1 / depth
@@ -372,7 +353,9 @@ class FrameSyn(torch.nn.Module):
         if negative_prompt is None:
             negative_prompt = self.adaptive_negative_prompt + self.negative_inpainting_prompt if self.adaptive_negative_prompt != None else self.negative_inpainting_prompt
       
-        inpainted_image = self.inpainting_pipeline(
+        from model_calls import ModelCalls
+        
+        inpainted_image = ModelCalls.call_inpainting_pipeline(
             prompt='' if self.use_noprompt else self.inpainting_prompt,
             negative_prompt=negative_prompt,
             image=init_image,
@@ -383,8 +366,8 @@ class FrameSyn(torch.nn.Module):
             width=self.inpainting_resolution,
             self_guidance=self_guidance,
             inpaint_mask=~padded_inpainting_mask.bool(),
-            rendered_image=padded_rendered_image,
-        ).images[0]
+            rendered_image=padded_rendered_image
+        )
         
         # [1, 3, 512, 512]
         inpainted_image = (inpainted_image / 2 + 0.5).clamp(0, 1).to(torch.float32)[None]
