@@ -560,7 +560,6 @@ class FrameSyn(torch.nn.Module):
             frame = {'image': image, 'transform_matrix': transform_matrix, 'no_loss_mask': no_loss_mask}
             frames.append(frame)
         train_data = {'frames': frames, 'pcd_points': pcd_points, 'pcd_colors': pcd_colors, 'camera_angle_x': camera_angle_x, 'W': W, 'H': H}
-        train_datas.append(train_data)
         
         # current_pc = self.get_current_pc(is_detach=True, get_sky=True)
         current_pc = self.sky_pc_downsampled
@@ -626,7 +625,7 @@ class FrameSyn(torch.nn.Module):
         return train_datas
 
     @torch.no_grad()
-    def convert_to_3dgs_traindata_latest(self, xyz_scale=1.0, points_3d=None, colors=None, use_no_loss_mask=False, use_only_latest_frame=True):
+    def convert_to_3dgs_traindata_latest(self, xyz_scale=1.0, points_3d=None, colors=None, use_no_loss_mask=True, use_only_latest_frame=True):
         """
         args:
             xyz_scale: scale the xyz coordinates by this factor (so that the value range is better for 3DGS optimization and web-viewing).
@@ -660,53 +659,7 @@ class FrameSyn(torch.nn.Module):
             frames.append(frame)
         train_data = {'frames': frames, 'pcd_points': pcd_points, 'pcd_colors': pcd_colors, 'pcd_normals': pcd_normals, 'camera_angle_x': camera_angle_x, 'W': W, 'H': H}
         
-        return train_data
-
-    @torch.no_grad()
-    def convert_to_3dgs_traindata_latest_layer(self, xyz_scale=1.0, points_3d=None, colors=None, use_only_latest_frame=True):
-        """
-        args:
-            xyz_scale: scale the xyz coordinates by this factor (so that the value range is better for 3DGS optimization and web-viewing).
-        return:
-            train_data: Original image and the point cloud of only occluding objects
-            train_data_layer: Base image (original with inpainted regions) and the point cloud of the base layer
-        """
-        W, H = 512, 512
-        camera_angle_x = 2*np.arctan(W / (2*self.init_focal_length))
-
-        # if points_3d is None or colors is None:
-        #     current_pc = self.get_current_pc(is_detach=True)
-        #     pcd_points = current_pc["xyz"].permute(1, 0).cpu().numpy() * xyz_scale
-        #     pcd_colors = current_pc["rgb"].cpu().numpy()
-        # else:
-        #     pcd_points = points_3d.permute(1, 0).cpu().numpy() * xyz_scale
-        #     pcd_colors = colors.cpu().numpy()
-
         current_pc = self.get_current_pc_latest(get_layer=True)
-        pcd_points = current_pc["xyz"].permute(1, 0).cpu().numpy() * xyz_scale
-        pcd_colors = current_pc["rgb"].cpu().numpy()
-        pcd_normals = current_pc['normals'].cpu().numpy()
-        frames = []
-        images = self.images
-        for i, img in enumerate(images):
-            if use_only_latest_frame and i != len(images) - 1:
-                continue
-            image = ToPILImage()(img[0])
-            transform_matrix_pt3d = self.cameras_archive[i].get_world_to_view_transform().get_matrix()[0]
-            transform_matrix_w2c_pt3d = transform_matrix_pt3d.transpose(0, 1)
-            transform_matrix_w2c_pt3d[:3, 3] *= xyz_scale
-            
-            transform_matrix_c2w_pt3d = transform_matrix_w2c_pt3d.inverse()
-
-            opengl_to_pt3d = torch.diag(torch.tensor([-1., 1, -1, 1], device=self.device))
-            transform_matrix_c2w_opengl = transform_matrix_c2w_pt3d @ opengl_to_pt3d
-            
-            transform_matrix = transform_matrix_c2w_opengl.cpu().numpy().tolist()
-            frame = {'image': image, 'transform_matrix': transform_matrix, 'no_loss_mask': None}
-            frames.append(frame)
-        train_data = {'frames': frames, 'pcd_points': pcd_points, 'pcd_colors': pcd_colors, 'pcd_normals': pcd_normals, 'camera_angle_x': camera_angle_x, 'W': W, 'H': H}
-        
-        current_pc = self.get_current_pc_latest()
         pcd_points = current_pc["xyz"].permute(1, 0).cpu().numpy() * xyz_scale
         pcd_colors = current_pc["rgb"].cpu().numpy()
         pcd_normals = current_pc['normals'].cpu().numpy()
@@ -1219,6 +1172,7 @@ class KeyframeGen(FrameSyn):
         rotation_matrix = torch.tensor(
             [[1, 0, 0], [0, torch.cos(delta), -torch.sin(delta)], [0, torch.sin(delta), torch.cos(delta)]],
             device=self.device,
+            dtype=new_camera.R.dtype  # Ensure rotation_matrix has the same dtype as new_camera.R
         )
         new_camera.R[0] = rotation_matrix @ new_camera.R[0]
         
@@ -1406,10 +1360,10 @@ class KeyframeGen(FrameSyn):
                 continue
             #-- 1. Dilate each segment --#
             mask = dilation((mask).float()[None, None], 
-                            kernel=dilation_kernel).squeeze().cpu() > 0.5
+                            kernel=dilation_kernel).squeeze().cpu().numpy() > 0.5
             # 4: tree; 6: boat; 83: truck; 87: street lamp
             if id in ['4', '76', '83', '87']:
-                mask_disocclusion |= mask.numpy()
+                mask_disocclusion |= mask
                 continue
             labeled_array, num_features = label(mask)
             for i in range(1, num_features+1):
@@ -1434,7 +1388,7 @@ class KeyframeGen(FrameSyn):
                     continue
                 #-- 8. [Find non-road region] --#
                 mask_i_erosion = erosion(torch.from_numpy(mask_i).float()[None, None], 
-                            kernel=dilation_kernel.cpu()).squeeze() > 0.5
+                            kernel=dilation_kernel.cpu()).squeeze().cpu().numpy() > 0.5
                 disp_pixels = disparity_np[mask_i_erosion]
                 p20 = np.percentile(disp_pixels, 20)
                 p80 = np.percentile(disp_pixels, 80)
@@ -1563,6 +1517,7 @@ class KeyframeGen(FrameSyn):
                 rotation_matrix = torch.tensor(
                     [[torch.cos(theta), 0, torch.sin(theta)], [0, 1, 0], [-torch.sin(theta), 0, torch.cos(theta)]],
                     device=self.device,
+                    dtype=new_camera.R.dtype  # Ensure rotation_matrix has the same dtype as new_camera.R
                 )
                 new_camera.R[0] = rotation_matrix @ new_camera.R[0]
                     
@@ -1585,6 +1540,7 @@ class KeyframeGen(FrameSyn):
                 rotation_matrix = torch.tensor(
                     [[torch.cos(theta), 0, torch.sin(theta)], [0, 1, 0], [-torch.sin(theta), 0, torch.cos(theta)]],
                     device=self.device,
+                    dtype=new_camera.R.dtype  # Ensure rotation_matrix has the same dtype as new_camera.R
                 )
                 new_camera.R[0] = rotation_matrix @ new_camera.R[0]
 
@@ -1630,6 +1586,7 @@ class KeyframeGen(FrameSyn):
                 rotation_matrix = torch.tensor(
                     [[1, 0, 0], [0, torch.cos(delta), -torch.sin(delta)], [0, torch.sin(delta), torch.cos(delta)]],
                     device=self.device,
+                    dtype=new_camera.R.dtype  # Ensure rotation_matrix has the same dtype as new_camera.R
                 )
                 new_camera.R[0] = rotation_matrix @ new_camera.R[0]
                 

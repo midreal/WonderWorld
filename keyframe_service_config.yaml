@@ -1,0 +1,14 @@
+# KeyframeGen服务配置
+service:
+  host: "0.0.0.0"  # 监听所有网络接口
+  port: 9090       # 服务端口
+  
+# 名称服务器配置
+nameserver:
+  host: "localhost"
+  port: 9090
+
+# 日志配置
+logging:
+  level: "INFO"
+  file: "keyframe_service.log"
