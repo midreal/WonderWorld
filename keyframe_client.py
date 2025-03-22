@@ -149,7 +149,7 @@ class RemoteKeyframeGen:
         
         # 使用JSON序列化器，直接传递配置
         try:
-            success = self.service.initialize(serializable_config, None)
+            success = self.service.initialize(serializable_config, rotation_path_list)
             self.initialized = success
             return success
         except Exception as e:
@@ -216,7 +216,11 @@ class RemoteKeyframeGen:
     
     def generate_sky_mask(self, input_image=None):
         """生成天空掩码"""
-        return self.service.generate_sky_mask(input_image)
+        result = self.service.generate_sky_mask(input_image)
+        # 将list转回tensor
+        if isinstance(result, list):
+            return torch.tensor(result, device=self.service._pyroConnection.device)
+        return result
     
     def generate_sky_pointcloud(self, syncdiffusion_model, image, mask, gen_sky, style):
         """生成天空点云"""

@@ -75,10 +75,7 @@ class KeyframeGenService:
         """初始化KeyframeGen服务"""
         print("初始化KeyframeGen服务...")
         self.config = config
-        print("value of config:  ", config)
-        print("value of rotation_path:  ", rotation_path)
 
-        
         # 打印配置信息
         print(f"发送配置: {list(config.keys())}")
         
@@ -116,20 +113,25 @@ class KeyframeGenService:
             self.models["normal_estimator"] = MarigoldNormalsPipeline.from_pretrained("prs-eth/marigold-normals-v0-1", torch_dtype=torch.bfloat16).to(config["device"])
             
             print("正在创建KeyframeGen实例...")
-            
-            # 创建KeyframeGen实例
-            self.kf_gen = KeyframeGen(
-                config=config, 
-                inpainter_pipeline=self.models["inpainter_pipeline"], 
-                mask_generator=self.models["mask_generator"], 
-                depth_model=self.models["depth_model"],
-                segment_model=self.models["segment_model"], 
-                segment_processor=self.models["segment_processor"], 
-                normal_estimator=self.models["normal_estimator"],
-                rotation_path=rotation_path, 
-                inpainting_resolution=config['inpainting_resolution_gen']
-            ).to(config["device"])
-            
+            print(f"rotation_path类型: {type(rotation_path)}")
+            print(f"rotation_path内容: {rotation_path}")
+            try:
+                self.kf_gen = KeyframeGen(
+                    config=config, 
+                    inpainter_pipeline=self.models["inpainter_pipeline"], 
+                    mask_generator=self.models["mask_generator"], 
+                    depth_model=self.models["depth_model"],
+                    segment_model=self.models["segment_model"], 
+                    segment_processor=self.models["segment_processor"], 
+                    normal_estimator=self.models["normal_estimator"],
+                    rotation_path=rotation_path, 
+                    inpainting_resolution=config['inpainting_resolution_gen']
+                ).to(config["device"])
+            except Exception as e:
+                print(f"初始化KeyframeGen时出错: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                raise
             print("KeyframeGen初始化完成")
             return True
         except Exception as e:
@@ -150,6 +152,9 @@ class KeyframeGenService:
         """设置最新图像"""
         if self.kf_gen is None:
             raise RuntimeError("KeyframeGen尚未初始化")
+        # 将numpy array转回tensor并移到正确的设备上
+        if isinstance(image, (list, np.ndarray)):
+            image = torch.tensor(image).to(self.config["device"])
         self.kf_gen.image_latest = image
         return True
     
@@ -165,7 +170,9 @@ class KeyframeGenService:
         """生成天空掩码"""
         if self.kf_gen is None:
             raise RuntimeError("KeyframeGen尚未初始化")
-        return self.kf_gen.generate_sky_mask(input_image)
+        # 在服务端就转换为float
+        result = self.kf_gen.generate_sky_mask(input_image)
+        return result.float()
     
     def generate_sky_pointcloud(self, model_config, image, mask, gen_sky, style):
         """生成天空点云"""

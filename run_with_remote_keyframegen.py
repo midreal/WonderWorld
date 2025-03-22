@@ -151,10 +151,11 @@ def run(config):
         nameserver_host=config.get("model_service_host", "localhost"),
         nameserver_port=config.get("model_service_port", 9090)
     )
-    
+    print("value of rotation_path:  ", rotation_path)
     # 初始化远程KeyframeGen
     print("初始化远程KeyframeGen...")
     kf_gen.initialize(config, rotation_path)
+    print("初始化远程KeyframeGen完成")
 
     ###### ------------------ Load modules ------------------ ######
 
@@ -170,7 +171,7 @@ def run(config):
         syncdiffusion_model = SyncDiffusion(config['device'], sd_version='2.0-inpaint')
     else:
         syncdiffusion_model = None
-    sky_mask = kf_gen.generate_sky_mask().float()
+    sky_mask = kf_gen.generate_sky_mask()  
     kf_gen.generate_sky_pointcloud(syncdiffusion_model, image=kf_gen.image_latest, mask=sky_mask, gen_sky=config['gen_sky_image'], style=style_prompt)
 
     kf_gen.recompose_image_latest_and_set_current_pc(scene_name=scene_name)
