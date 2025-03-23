@@ -116,8 +116,8 @@ def run(config):
     seeding(config["seed"])
     example = config['example_name']
 
-    from model_calls import models
-    models.initialize(config["device"])
+    # from model_calls import models
+    # models.initialize(config["device"])
     mask_generator = create_mask_generator_repvit()
     
     rotation_path = config['rotation_path'][:config['num_scenes']]

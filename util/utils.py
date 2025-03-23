@@ -358,6 +358,13 @@ def soft_stitching(source_img, target_img, mask, blur_size=11, sigma=2.5):
     # blur_size  # Size of the Gaussian kernel, must be odd
     # sigma       # Standard deviation of the Gaussian kernel
     
+    # Get device from source image
+    device = source_img.device
+    
+    # Ensure all inputs are on the same device
+    target_img = target_img.to(device)
+    mask = mask.to(device)
+    
     # Ensure the mask is float for blurring
     soft_mask = mask.float()
 
@@ -372,9 +379,9 @@ def soft_stitching(source_img, target_img, mask, blur_size=11, sigma=2.5):
     blurred_mask = blurred_mask[:, :, padding:-padding, padding:-padding]
     
     # Ensure the mask is within 0 and 1 after blurring
-    blurred_mask = torch.clamp(blurred_mask, 0, 1)
+    blurred_mask = torch.clamp(blurred_mask, 0, 1).to(device)
     
-    # Blend the images based on the blurred mask
+    # Blend the images based on the blurred mask (all tensors now on same device)
     stitched_img = source_img * blurred_mask + target_img * (1 - blurred_mask)
     
     return stitched_img

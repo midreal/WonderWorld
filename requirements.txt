@@ -24,3 +24,4 @@ av
 easydict==1.13
 mediapy==1.2.2
 huggingface-hub==0.24.6
+requests>=2.31.0

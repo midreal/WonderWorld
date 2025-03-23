@@ -886,8 +886,11 @@ class KeyframeGen(FrameSyn):
             self.refine_disp_with_segments(no_refine_mask=ground_mask.squeeze().cpu().numpy(),
                                              existing_mask=~(self.mask_disocclusion).bool().squeeze().cpu().numpy(),
                                              existing_disp=self.disparity_latest_init.squeeze().cpu().numpy())
-            wrong_depth_mask = self.depth_latest<self.depth_latest_init
-            self.depth_latest[wrong_depth_mask] = self.depth_latest_init[wrong_depth_mask] + 0.0001
+            # Ensure both tensors are on the same device for comparison
+            depth_latest = self.depth_latest.to(self.device)
+            depth_latest_init = self.depth_latest_init.to(self.device)
+            wrong_depth_mask = depth_latest < depth_latest_init
+            self.depth_latest[wrong_depth_mask] = depth_latest_init[wrong_depth_mask] + 0.0001
             self.depth_latest = self.mask_disocclusion * self.depth_latest + (1-self.mask_disocclusion) * self.depth_latest_init
             self.update_sky_mask()
             self.update_current_pc_by_kf(image=self.image_latest, depth=self.depth_latest, valid_mask=~self.sky_mask_latest)  # Base only
@@ -1264,11 +1267,11 @@ class KeyframeGen(FrameSyn):
         else:
             image = ToPILImage()(self.image_latest.squeeze())
             
-        segment_output = ModelCalls.call_segmentation_model(image)
-        # Get image size for post-processing
+        # Get image size for segmentation
         img_size = image.size[::-1] if hasattr(image, 'size') else (512, 512)
-        pred_semantic_map = ModelCalls.post_process_segmentation(
-                                segment_output, target_sizes=[img_size])
+        # Call segmentation model with target size
+        pred_semantic_map = ModelCalls.call_segmentation_model(
+                                image, target_sizes=[img_size])
         sky_mask = pred_semantic_map == 2  # 2 for ade20k, 119 for coco
         if self.sky_erode_kernel_size > 0:
             sky_mask = erosion(sky_mask.float()[None, None], 
@@ -1288,11 +1291,11 @@ class KeyframeGen(FrameSyn):
                 image = ToPILImage()(self.image_latest.squeeze())
                 
             # ModelCalls is imported at the top of the file
-            segment_output = ModelCalls.call_segmentation_model(image)
-            # Get image size for post-processing
+            # Get image size for segmentation
             img_size = image.size[::-1] if hasattr(image, 'size') else (512, 512)
-            pred_semantic_map = ModelCalls.post_process_segmentation(
-                                    segment_output, target_sizes=[img_size])
+            # Call segmentation model with target size
+            pred_semantic_map = ModelCalls.call_segmentation_model(
+                                    image, target_sizes=[img_size])
             sem_map = pred_semantic_map
         # 3: floor; 6: road; 9: grass; 11: pavement; 13: earth; 26: sea; 29: field; 46: sand; 128: lake
         ground_mask = (sem_map == 3) | (sem_map == 6) | (sem_map == 9) | (sem_map == 11) | (sem_map == 13) | (sem_map == 26) | (sem_map == 29) | (sem_map == 46) | (sem_map == 128)
@@ -1333,11 +1336,11 @@ class KeyframeGen(FrameSyn):
             image = ToPILImage()(self.image_latest.squeeze())
             
             # ModelCalls is imported at the top of the file
-            segment_output = ModelCalls.call_segmentation_model(image)
-            # Get image size for post-processing
+            # Get image size for segmentation
             img_size = image.size[::-1] if hasattr(image, 'size') else (512, 512)
-            pred_semantic_map = ModelCalls.post_process_segmentation(
-                                    segment_output, target_sizes=[img_size])
+            # Call segmentation model with target size
+            pred_semantic_map = ModelCalls.call_segmentation_model(
+                                    image, target_sizes=[img_size])
 
         unique_elements = torch.unique(pred_semantic_map)
         masks = {str(element.item()): (pred_semantic_map == element) for element in unique_elements}
