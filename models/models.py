@@ -128,7 +128,7 @@ class SoftmaxImportanceCompositor(torch.nn.Module):
 
 
 class FrameSyn(torch.nn.Module):
-    def __init__(self, config, inpainter_pipeline, depth_model, normal_estimator=None):
+    def __init__(self, config):
         """ This module implement following tasks that are exactly the same in both keyframe generation and new view generation:
         1. Inpainting
         2. Depth estimation
@@ -141,6 +141,9 @@ class FrameSyn(torch.nn.Module):
         4. Anything else
         """
         super().__init__()
+
+        # Import models from model_calls
+        from model_calls import models
 
         ####### Set up placeholder attributes #######
         self.inpainting_prompt = None
@@ -183,7 +186,9 @@ class FrameSyn(torch.nn.Module):
         self.config = config
         self.device = config["device"]
 
-        self.inpainting_pipeline = inpainter_pipeline
+        # Use model instances from model_calls
+        self.inpainting_pipeline = models.inpainting_pipeline
+            
         self.use_noprompt = False
         self.negative_inpainting_prompt = config['negative_inpainting_prompt']
         self.is_upper_mask_aggressive = False
@@ -193,8 +198,10 @@ class FrameSyn(torch.nn.Module):
         self.decoder_learning_rate = config['decoder_learning_rate']
         self.dilate_mask_decoder_ft = config['dilate_mask_decoder_ft']
 
-        self.depth_model = depth_model
-        self.normal_estimator = normal_estimator
+        # Use model instances from model_calls
+        self.depth_model = models.depth_model
+        self.normal_estimator = models.normal_estimator
+            
         self.depth_model_name = config['depth_model'].lower()
         self.depth_shift = config['depth_shift']
         self.very_far_depth = config['sky_hard_depth'] * 2
@@ -800,16 +807,15 @@ class FrameSyn(torch.nn.Module):
     #         self.update_current_pc(points_3d, colors)
     
 class KeyframeGen(FrameSyn):
-    def __init__(self, config, inpainter_pipeline, depth_model, mask_generator,
-                 segment_model=None, segment_processor=None, normal_estimator=None,
-                 rotation_path=None, inpainting_resolution=None):
+    def __init__(self, config, mask_generator, rotation_path=None, inpainting_resolution=None):
         """ This class is for generating keyframes. It inherits from FrameSyn. It implements the following tasks:
         1. Render
         2. Set cameras
         3. Initialize point cloud
         4. Post-process depth
         """
-        super().__init__(config, inpainter_pipeline=inpainter_pipeline, depth_model=depth_model, normal_estimator=normal_estimator)
+        # Initialize parent class with config only
+        super().__init__(config)
         
         ####### Set up placeholder attributes #######
 
@@ -831,8 +837,13 @@ class KeyframeGen(FrameSyn):
         self.run_dir = run_dir_root / f"Gen-{dt_string}"
         self.logger = SimpleLogger(self.run_dir / "log.txt")
         self.mask_generator = mask_generator
-        self.segment_model = segment_model
-        self.segment_processor = segment_processor
+        
+        # Store rotation path if provided
+        self.rotation_path = rotation_path
+        
+        # Set inpainting resolution if provided
+        if inpainting_resolution is not None:
+            self.inpainting_resolution = inpainting_resolution
         self.sky_hard_depth = config['sky_hard_depth']
         self.sky_erode_kernel_size = config['sky_erode_kernel_size']
         self.is_upper_mask_aggressive = False

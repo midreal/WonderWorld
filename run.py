@@ -124,9 +124,8 @@ def run(config):
     assert len(rotation_path) == config['num_scenes']
     
     print('###### ------------------ Keyframe (the major part of point clouds) generation ------------------ ######') 
-    kf_gen = KeyframeGen(config=config, inpainter_pipeline=models.inpainting_pipeline, mask_generator=mask_generator, depth_model=models.depth_model,
-                            segment_model=models.segment_model, segment_processor=models.segment_processor, normal_estimator=models.normal_estimator,
-                            rotation_path=rotation_path, inpainting_resolution=config['inpainting_resolution_gen']).to(config["device"])
+    kf_gen = KeyframeGen(config=config, mask_generator=mask_generator,
+                         rotation_path=rotation_path, inpainting_resolution=config['inpainting_resolution_gen']).to(config["device"])
 
     yaml_data = load_example_yaml(config["example_name"], 'examples/examples.yaml')
     content_prompt, style_prompt, adaptive_negative_prompt, background_prompt, control_text, outdoor = yaml_data['content_prompt'], yaml_data['style_prompt'], yaml_data['negative_prompt'], yaml_data.get('background', None), yaml_data.get('control_text', None), yaml_data.get('outdoor', False)
