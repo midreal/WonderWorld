@@ -1301,11 +1301,12 @@ class KeyframeGen(FrameSyn):
         else:
             image = ToPILImage()(self.image_latest.squeeze())
             
-        segmenter_input = self.segment_processor(image, ["semantic"], return_tensors="pt")
-        segmenter_input = {name: tensor.to("cuda") for name, tensor in segmenter_input.items()}
-        segment_output = self.segment_model(**segmenter_input)
-        pred_semantic_map = self.segment_processor.post_process_semantic_segmentation(
-                                segment_output, target_sizes=[image.size[::-1]])[0]
+        from model_calls import ModelCalls, models
+        segment_output = ModelCalls.call_segmentation_model(image)
+        # Get image size for post-processing
+        img_size = image.size[::-1] if hasattr(image, 'size') else (512, 512)
+        pred_semantic_map = models.segment_processor.post_process_semantic_segmentation(
+                                segment_output, target_sizes=[img_size])[0]
         sky_mask = pred_semantic_map == 2  # 2 for ade20k, 119 for coco
         if self.sky_erode_kernel_size > 0:
             sky_mask = erosion(sky_mask.float()[None, None], 
@@ -1324,11 +1325,12 @@ class KeyframeGen(FrameSyn):
             else:
                 image = ToPILImage()(self.image_latest.squeeze())
                 
-            segmenter_input = self.segment_processor(image, ["semantic"], return_tensors="pt")
-            segmenter_input = {name: tensor.to("cuda") for name, tensor in segmenter_input.items()}
-            segment_output = self.segment_model(**segmenter_input)
-            pred_semantic_map = self.segment_processor.post_process_semantic_segmentation(
-                                    segment_output, target_sizes=[image.size[::-1]])[0]
+            from model_calls import ModelCalls, models
+            segment_output = ModelCalls.call_segmentation_model(image)
+            # Get image size for post-processing
+            img_size = image.size[::-1] if hasattr(image, 'size') else (512, 512)
+            pred_semantic_map = models.segment_processor.post_process_semantic_segmentation(
+                                    segment_output, target_sizes=[img_size])[0]
             sem_map = pred_semantic_map
         # 3: floor; 6: road; 9: grass; 11: pavement; 13: earth; 26: sea; 29: field; 46: sand; 128: lake
         ground_mask = (sem_map == 3) | (sem_map == 6) | (sem_map == 9) | (sem_map == 11) | (sem_map == 13) | (sem_map == 26) | (sem_map == 29) | (sem_map == 46) | (sem_map == 128)
@@ -1368,11 +1370,12 @@ class KeyframeGen(FrameSyn):
         if pred_semantic_map is None:
             image = ToPILImage()(self.image_latest.squeeze())
             
-            segmenter_input = self.segment_processor(image, ["semantic"], return_tensors="pt")
-            segmenter_input = {name: tensor.to("cuda") for name, tensor in segmenter_input.items()}
-            segment_output = self.segment_model(**segmenter_input)
-            pred_semantic_map = self.segment_processor.post_process_semantic_segmentation(
-                                    segment_output, target_sizes=[image.size[::-1]])[0]
+            from model_calls import ModelCalls, models
+            segment_output = ModelCalls.call_segmentation_model(image)
+            # Get image size for post-processing
+            img_size = image.size[::-1] if hasattr(image, 'size') else (512, 512)
+            pred_semantic_map = models.segment_processor.post_process_semantic_segmentation(
+                                    segment_output, target_sizes=[img_size])[0]
 
         unique_elements = torch.unique(pred_semantic_map)
         masks = {str(element.item()): (pred_semantic_map == element) for element in unique_elements}

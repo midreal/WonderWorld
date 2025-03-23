@@ -97,6 +97,24 @@ class ModelCalls:
 
     @staticmethod
     def call_segmentation_model(image):
+        # Handle both PIL Image and tensor inputs
+        from PIL import Image
+        from torchvision.transforms import ToPILImage
+        import torch
+        
+        # Convert tensor to PIL Image if needed
+        if isinstance(image, torch.Tensor):
+            if image.dim() == 4:  # [B, C, H, W]
+                image = ToPILImage()(image.squeeze())
+            elif image.dim() == 3:  # [C, H, W]
+                image = ToPILImage()(image)
+        
+        # Ensure we have a PIL Image
+        if not isinstance(image, Image.Image):
+            raise TypeError(f"Expected PIL Image or torch Tensor, got {type(image)}")
+            
+        # Process the image
         inputs = models.segment_processor(images=image, task_inputs=["semantic"], return_tensors="pt")
+        inputs = {name: tensor.to("cuda") for name, tensor in inputs.items()}
         outputs = models.segment_model(**inputs)
         return outputs
