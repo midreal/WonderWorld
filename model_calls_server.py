@@ -7,7 +7,7 @@ from marigold_lcm.marigold_pipeline import MarigoldPipeline, MarigoldNormalsPipe
 from util.utils import prepare_scheduler
 from PIL import Image
 import io
-import base64
+import base64, json
 from flask import Flask, request, jsonify
 import numpy as np
 from torchvision.transforms import ToPILImage, ToTensor
@@ -28,15 +28,15 @@ class Models:
         self.segment_model = OneFormerForUniversalSegmentation.from_pretrained("shi-labs/oneformer_ade20k_swin_large").to('cuda')
         print("Loaded segmentation models")
         
-        self.inpainting_pipeline = StableDiffusionInpaintPipeline.from_pretrained(
-            "stabilityai/stable-diffusion-2-inpainting",
-            safety_checker=None,
-            torch_dtype=torch.bfloat16,
-        ).to(device)
-        self.inpainting_pipeline.scheduler = DDIMScheduler.from_config(self.inpainting_pipeline.scheduler.config)
-        self.inpainting_pipeline.unet.set_attn_processor(AttnProcessor2_0())
-        self.inpainting_pipeline.vae.set_attn_processor(AttnProcessor2_0())
-        print("Loaded inpainting pipeline")
+        # self.inpainting_pipeline = StableDiffusionInpaintPipeline.from_pretrained(
+        #     "stabilityai/stable-diffusion-2-inpainting",
+        #     safety_checker=None,
+        #     torch_dtype=torch.bfloat16,
+        # ).to(device)
+        # self.inpainting_pipeline.scheduler = DDIMScheduler.from_config(self.inpainting_pipeline.scheduler.config)
+        # self.inpainting_pipeline.unet.set_attn_processor(AttnProcessor2_0())
+        # self.inpainting_pipeline.vae.set_attn_processor(AttnProcessor2_0())
+        # print("Loaded inpainting pipeline")
         
         self.depth_model = MarigoldPipeline.from_pretrained("prs-eth/marigold-v1-0", torch_dtype=torch.bfloat16).to(device)
         self.depth_model.scheduler = EulerDiscreteScheduler.from_config(self.depth_model.scheduler.config)
@@ -66,8 +66,15 @@ def serialize_for_json(obj):
         buffer = io.BytesIO()
         # Convert bfloat16 to float32 before numpy conversion
         if obj.dtype == torch.bfloat16:
-            obj = obj.to(torch.float32)
-        tensor_np = obj.detach().cpu().numpy()
+            obj = obj.cpu().to(torch.float32)
+            tensor_np = obj.detach().numpy()
+            np.save(buffer, tensor_np)
+            return {
+                "__type__": "tensorbf16",
+                "data": base64.b64encode(buffer.getvalue()).decode('utf-8')
+            }
+        obj = obj.cpu()
+        tensor_np = obj.detach().numpy()
         np.save(buffer, tensor_np)
         return {
             "__type__": "tensor",

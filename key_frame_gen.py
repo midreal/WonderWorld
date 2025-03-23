@@ -7,6 +7,7 @@ from omegaconf import OmegaConf
 from tqdm import tqdm
 from kornia.morphology import dilation
 
+import io, base64
 import cv2
 import numpy as np
 import torch
@@ -327,7 +328,7 @@ class FrameSyn(torch.nn.Module):
             inpaint_mask=~padded_inpainting_mask.bool(),
             rendered_image=padded_rendered_image
         )
-        
+
         # [1, 3, 512, 512]
         inpainted_image = (inpainted_image / 2 + 0.5).clamp(0, 1).to(torch.float32)[None]
             
