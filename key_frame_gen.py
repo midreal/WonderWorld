@@ -25,7 +25,6 @@ from pytorch3d.structures import Pointclouds
 from torchvision.transforms import ToTensor, ToPILImage, Resize
 from util.midas_utils import dpt_transform, dpt_512_transform
 from util.utils import functbl, save_depth_map, rotate_pytorch3d_camera, translate_pytorch3d_camera, SimpleLogger, soft_stitching
-
 from util.segment_utils import refine_disp_with_segments_2, save_sam_anns
 from typing import List, Optional, Tuple, Union
 from kornia.morphology import erosion
@@ -34,6 +33,8 @@ import os
 from utils.loss import l1_loss
 import matplotlib.pyplot as plt
 from scipy.ndimage import label
+
+from model_calls import ModelCalls
 
 BG_COLOR=(1, 0, 0)
 
@@ -128,7 +129,7 @@ class SoftmaxImportanceCompositor(torch.nn.Module):
 
 
 class FrameSyn(torch.nn.Module):
-    def __init__(self, config, inpainter_pipeline, depth_model, normal_estimator=None):
+    def __init__(self, config):
         """ This module implement following tasks that are exactly the same in both keyframe generation and new view generation:
         1. Inpainting
         2. Depth estimation
@@ -141,6 +142,8 @@ class FrameSyn(torch.nn.Module):
         4. Anything else
         """
         super().__init__()
+
+        # ModelCalls is imported at the top of the file
 
         ####### Set up placeholder attributes #######
         self.inpainting_prompt = None
@@ -183,7 +186,6 @@ class FrameSyn(torch.nn.Module):
         self.config = config
         self.device = config["device"]
 
-        self.inpainting_pipeline = inpainter_pipeline
         self.use_noprompt = False
         self.negative_inpainting_prompt = config['negative_inpainting_prompt']
         self.is_upper_mask_aggressive = False
@@ -193,8 +195,7 @@ class FrameSyn(torch.nn.Module):
         self.decoder_learning_rate = config['decoder_learning_rate']
         self.dilate_mask_decoder_ft = config['dilate_mask_decoder_ft']
 
-        self.depth_model = depth_model
-        self.normal_estimator = normal_estimator
+        # Model configuration
         self.depth_model_name = config['depth_model'].lower()
         self.depth_shift = config['depth_shift']
         self.very_far_depth = config['sky_hard_depth'] * 2
@@ -235,29 +236,7 @@ class FrameSyn(torch.nn.Module):
         args:
             image: [1, 3, 512, 512]
         """
-        # Marigold-my-normal
-        # normal = self.normal_estimator(
-        #     image,
-        #     denoising_steps=10,     # optional
-        #     ensemble_size=1,       # optional
-        #     processing_res=0,     # optional
-        #     match_input_res=True,   # optional
-        #     batch_size=0,           # optional
-        #     color_map=None,   # optional
-        #     show_progress_bar=True, # optional
-        #     logger=self.logger,
-        # )
-        # normal = normal[None].to(dtype=torch.float32)
-        # ToPILImage()(normal[0]/2+0.5).save("tmp/normal_my.png")
-
-        # Marigold-official-normal
-        normal = self.normal_estimator(
-            image * 2 - 1,
-            num_inference_steps=10,
-            processing_res=768,
-            output_prediction_format='pt',
-        ).to(dtype=torch.float32)  # [1, 3, H, W], [-1, 1]
-        # ToPILImage()(normal[0]/2+0.5).save("tmp/normal_new.png")
+        normal = ModelCalls.call_normal_estimator(image)
         return normal
         
     def get_depth(self, image, archive_output=False, target_depth=None, mask_align=None, save_depth_to_cache=False, mask_farther=None, diffusion_steps=30, guidance_steps=8):
@@ -269,56 +248,19 @@ class FrameSyn(torch.nn.Module):
             mask_align: if not None, then use this mask to align the depth map.
             save_depth_to_cache: if True, then save the depth map to cache.
         """
-        assert self.depth_model is not None
-        if self.depth_model_name == "midas":
-            # MiDaS
-            disparity = self.depth_model(dpt_transform(image))
-            disparity = torch.nn.functional.interpolate(
-                disparity.unsqueeze(1),
-                size=image.shape[2:],
-                mode="bilinear",
-                align_corners=False,
-            )
-            disparity = disparity.clip(1e-6, max=None)
-            depth = 1 / disparity
-        if self.depth_model_name == "midas_v3.1":
-            img_transformed = dpt_512_transform(image)
-            disparity = self.depth_model(img_transformed)
-            disparity = torch.nn.functional.interpolate(
-                disparity.unsqueeze(1),
-                size=image.shape[2:],
-                mode="bilinear",
-                align_corners=False,
-            )
-            disparity = disparity.clip(1e-6, max=None)
-            depth = 1 / disparity
-        elif self.depth_model_name == "zoedepth":
-            # ZeoDepth
-            depth = self.depth_model(image)['metric_depth']
-        elif self.depth_model_name == "marigold":
+        if self.depth_model_name == "marigold":
             # Marigold
-            image_input = (image*255).byte().squeeze().permute(1, 2, 0)
-            image_input = Image.fromarray(image_input.cpu().numpy())
-            depth = self.depth_model(
-                image_input,
-                denoising_steps=diffusion_steps,     # optional
-                ensemble_size=1,       # optional
-                processing_res=0,     # optional
-                match_input_res=True,   # optional
-                batch_size=0,           # optional
-                color_map=None,   # optional
-                show_progress_bar=True, # optional
+            # ModelCalls is imported at the top of the file
+            depth = ModelCalls.call_depth_model(
+                image,
+                denoising_steps=diffusion_steps,
+                guidance_steps=guidance_steps,
                 depth_conditioning=self.config['depth_conditioning'],
                 target_depth=target_depth,
                 mask_align=mask_align,
                 mask_farther=mask_farther,
-                guidance_steps=guidance_steps,
-                # guidance_steps=20,
-                logger=self.logger,
+                logger=self.logger
             )
-                
-            depth = depth[None, None, :].to(dtype=torch.float32)
-            depth /= 200
 
         depth = depth + self.depth_shift
         disparity = 1 / depth
@@ -372,7 +314,7 @@ class FrameSyn(torch.nn.Module):
         if negative_prompt is None:
             negative_prompt = self.adaptive_negative_prompt + self.negative_inpainting_prompt if self.adaptive_negative_prompt != None else self.negative_inpainting_prompt
       
-        inpainted_image = self.inpainting_pipeline(
+        inpainted_image = ModelCalls.call_inpainting_pipeline(
             prompt='' if self.use_noprompt else self.inpainting_prompt,
             negative_prompt=negative_prompt,
             image=init_image,
@@ -383,8 +325,8 @@ class FrameSyn(torch.nn.Module):
             width=self.inpainting_resolution,
             self_guidance=self_guidance,
             inpaint_mask=~padded_inpainting_mask.bool(),
-            rendered_image=padded_rendered_image,
-        ).images[0]
+            rendered_image=padded_rendered_image
+        )
         
         # [1, 3, 512, 512]
         inpainted_image = (inpainted_image / 2 + 0.5).clamp(0, 1).to(torch.float32)[None]
@@ -817,16 +759,15 @@ class FrameSyn(torch.nn.Module):
     #         self.update_current_pc(points_3d, colors)
     
 class KeyframeGen(FrameSyn):
-    def __init__(self, config, inpainter_pipeline, depth_model, mask_generator,
-                 segment_model=None, segment_processor=None, normal_estimator=None,
-                 rotation_path=None, inpainting_resolution=None):
+    def __init__(self, config, mask_generator, rotation_path=None, inpainting_resolution=None):
         """ This class is for generating keyframes. It inherits from FrameSyn. It implements the following tasks:
         1. Render
         2. Set cameras
         3. Initialize point cloud
         4. Post-process depth
         """
-        super().__init__(config, inpainter_pipeline=inpainter_pipeline, depth_model=depth_model, normal_estimator=normal_estimator)
+        # Initialize parent class with config only
+        super().__init__(config)
         
         ####### Set up placeholder attributes #######
 
@@ -848,8 +789,13 @@ class KeyframeGen(FrameSyn):
         self.run_dir = run_dir_root / f"Gen-{dt_string}"
         self.logger = SimpleLogger(self.run_dir / "log.txt")
         self.mask_generator = mask_generator
-        self.segment_model = segment_model
-        self.segment_processor = segment_processor
+        
+        # Store rotation path if provided
+        self.rotation_path = rotation_path
+        
+        # Set inpainting resolution if provided
+        if inpainting_resolution is not None:
+            self.inpainting_resolution = inpainting_resolution
         self.sky_hard_depth = config['sky_hard_depth']
         self.sky_erode_kernel_size = config['sky_erode_kernel_size']
         self.is_upper_mask_aggressive = False
@@ -1318,11 +1264,11 @@ class KeyframeGen(FrameSyn):
         else:
             image = ToPILImage()(self.image_latest.squeeze())
             
-        segmenter_input = self.segment_processor(image, ["semantic"], return_tensors="pt")
-        segmenter_input = {name: tensor.to("cuda") for name, tensor in segmenter_input.items()}
-        segment_output = self.segment_model(**segmenter_input)
-        pred_semantic_map = self.segment_processor.post_process_semantic_segmentation(
-                                segment_output, target_sizes=[image.size[::-1]])[0]
+        segment_output = ModelCalls.call_segmentation_model(image)
+        # Get image size for post-processing
+        img_size = image.size[::-1] if hasattr(image, 'size') else (512, 512)
+        pred_semantic_map = ModelCalls.post_process_segmentation(
+                                segment_output, target_sizes=[img_size])
         sky_mask = pred_semantic_map == 2  # 2 for ade20k, 119 for coco
         if self.sky_erode_kernel_size > 0:
             sky_mask = erosion(sky_mask.float()[None, None], 
@@ -1341,11 +1287,12 @@ class KeyframeGen(FrameSyn):
             else:
                 image = ToPILImage()(self.image_latest.squeeze())
                 
-            segmenter_input = self.segment_processor(image, ["semantic"], return_tensors="pt")
-            segmenter_input = {name: tensor.to("cuda") for name, tensor in segmenter_input.items()}
-            segment_output = self.segment_model(**segmenter_input)
-            pred_semantic_map = self.segment_processor.post_process_semantic_segmentation(
-                                    segment_output, target_sizes=[image.size[::-1]])[0]
+            # ModelCalls is imported at the top of the file
+            segment_output = ModelCalls.call_segmentation_model(image)
+            # Get image size for post-processing
+            img_size = image.size[::-1] if hasattr(image, 'size') else (512, 512)
+            pred_semantic_map = ModelCalls.post_process_segmentation(
+                                    segment_output, target_sizes=[img_size])
             sem_map = pred_semantic_map
         # 3: floor; 6: road; 9: grass; 11: pavement; 13: earth; 26: sea; 29: field; 46: sand; 128: lake
         ground_mask = (sem_map == 3) | (sem_map == 6) | (sem_map == 9) | (sem_map == 11) | (sem_map == 13) | (sem_map == 26) | (sem_map == 29) | (sem_map == 46) | (sem_map == 128)
@@ -1385,11 +1332,12 @@ class KeyframeGen(FrameSyn):
         if pred_semantic_map is None:
             image = ToPILImage()(self.image_latest.squeeze())
             
-            segmenter_input = self.segment_processor(image, ["semantic"], return_tensors="pt")
-            segmenter_input = {name: tensor.to("cuda") for name, tensor in segmenter_input.items()}
-            segment_output = self.segment_model(**segmenter_input)
-            pred_semantic_map = self.segment_processor.post_process_semantic_segmentation(
-                                    segment_output, target_sizes=[image.size[::-1]])[0]
+            # ModelCalls is imported at the top of the file
+            segment_output = ModelCalls.call_segmentation_model(image)
+            # Get image size for post-processing
+            img_size = image.size[::-1] if hasattr(image, 'size') else (512, 512)
+            pred_semantic_map = ModelCalls.post_process_segmentation(
+                                    segment_output, target_sizes=[img_size])
 
         unique_elements = torch.unique(pred_semantic_map)
         masks = {str(element.item()): (pred_semantic_map == element) for element in unique_elements}

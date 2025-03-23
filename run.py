@@ -20,7 +20,7 @@ from util.stable_diffusion_inpaint import StableDiffusionInpaintPipeline
 from diffusers.models.attention_processor import AttnProcessor2_0
 from marigold_lcm.marigold_pipeline import MarigoldPipeline, MarigoldPipelineNormal, MarigoldNormalsPipeline
 
-from models.models import KeyframeGen, save_point_cloud_as_ply
+from key_frame_gen import KeyframeGen, save_point_cloud_as_ply
 from util.gs_utils import save_pc_as_3dgs, convert_pc_to_splat
 from util.chatGPT4 import TextpromptGen
 from util.general_utils import apply_depth_colormap, save_video
@@ -116,34 +116,16 @@ def run(config):
     seeding(config["seed"])
     example = config['example_name']
 
-    segment_processor = OneFormerProcessor.from_pretrained("shi-labs/oneformer_ade20k_swin_large")
-    segment_model = OneFormerForUniversalSegmentation.from_pretrained("shi-labs/oneformer_ade20k_swin_large").to('cuda')
-
+    from model_calls import models
+    models.initialize(config["device"])
     mask_generator = create_mask_generator_repvit()
-
-    inpainter_pipeline = StableDiffusionInpaintPipeline.from_pretrained(
-            config["stable_diffusion_checkpoint"],
-            safety_checker=None,
-            torch_dtype=torch.bfloat16,
-        ).to(config["device"])
-    inpainter_pipeline.scheduler = DDIMScheduler.from_config(inpainter_pipeline.scheduler.config)
-    inpainter_pipeline.unet.set_attn_processor(AttnProcessor2_0())
-    inpainter_pipeline.vae.set_attn_processor(AttnProcessor2_0())
     
     rotation_path = config['rotation_path'][:config['num_scenes']]
     assert len(rotation_path) == config['num_scenes']
     
-    
-    depth_model = MarigoldPipeline.from_pretrained("prs-eth/marigold-v1-0", torch_dtype=torch.bfloat16).to(config["device"])
-    depth_model.scheduler = EulerDiscreteScheduler.from_config(depth_model.scheduler.config)
-    depth_model.scheduler = prepare_scheduler(depth_model.scheduler)
-
-    normal_estimator = MarigoldNormalsPipeline.from_pretrained("prs-eth/marigold-normals-v0-1", torch_dtype=torch.bfloat16).to(config["device"])
-    
     print('###### ------------------ Keyframe (the major part of point clouds) generation ------------------ ######') 
-    kf_gen = KeyframeGen(config=config, inpainter_pipeline=inpainter_pipeline, mask_generator=mask_generator, depth_model=depth_model,
-                            segment_model=segment_model, segment_processor=segment_processor, normal_estimator=normal_estimator,
-                            rotation_path=rotation_path, inpainting_resolution=config['inpainting_resolution_gen']).to(config["device"])
+    kf_gen = KeyframeGen(config=config, mask_generator=mask_generator,
+                         rotation_path=rotation_path, inpainting_resolution=config['inpainting_resolution_gen']).to(config["device"])
 
     yaml_data = load_example_yaml(config["example_name"], 'examples/examples.yaml')
     content_prompt, style_prompt, adaptive_negative_prompt, background_prompt, control_text, outdoor = yaml_data['content_prompt'], yaml_data['style_prompt'], yaml_data['negative_prompt'], yaml_data.get('background', None), yaml_data.get('control_text', None), yaml_data.get('outdoor', False)
