@@ -118,3 +118,11 @@ class ModelCalls:
         inputs = {name: tensor.to("cuda") for name, tensor in inputs.items()}
         outputs = models.segment_model(**inputs)
         return outputs
+
+    @staticmethod
+    def post_process_segmentation(segment_output, target_sizes=None):
+        """Post-process segmentation output to get semantic map"""
+        if target_sizes is None:
+            target_sizes = [(512, 512)]
+        return models.segment_processor.post_process_semantic_segmentation(
+            segment_output, target_sizes=target_sizes)[0]

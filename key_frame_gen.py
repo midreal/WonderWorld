@@ -25,7 +25,6 @@ from pytorch3d.structures import Pointclouds
 from torchvision.transforms import ToTensor, ToPILImage, Resize
 from util.midas_utils import dpt_transform, dpt_512_transform
 from util.utils import functbl, save_depth_map, rotate_pytorch3d_camera, translate_pytorch3d_camera, SimpleLogger, soft_stitching
-
 from util.segment_utils import refine_disp_with_segments_2, save_sam_anns
 from typing import List, Optional, Tuple, Union
 from kornia.morphology import erosion
@@ -34,6 +33,8 @@ import os
 from utils.loss import l1_loss
 import matplotlib.pyplot as plt
 from scipy.ndimage import label
+
+from model_calls import ModelCalls
 
 BG_COLOR=(1, 0, 0)
 
@@ -142,8 +143,7 @@ class FrameSyn(torch.nn.Module):
         """
         super().__init__()
 
-        # Import models from model_calls
-        from model_calls import models
+        # ModelCalls is imported at the top of the file
 
         ####### Set up placeholder attributes #######
         self.inpainting_prompt = None
@@ -186,9 +186,6 @@ class FrameSyn(torch.nn.Module):
         self.config = config
         self.device = config["device"]
 
-        # Use model instances from model_calls
-        self.inpainting_pipeline = models.inpainting_pipeline
-            
         self.use_noprompt = False
         self.negative_inpainting_prompt = config['negative_inpainting_prompt']
         self.is_upper_mask_aggressive = False
@@ -198,10 +195,7 @@ class FrameSyn(torch.nn.Module):
         self.decoder_learning_rate = config['decoder_learning_rate']
         self.dilate_mask_decoder_ft = config['dilate_mask_decoder_ft']
 
-        # Use model instances from model_calls
-        self.depth_model = models.depth_model
-        self.normal_estimator = models.normal_estimator
-            
+        # Model configuration
         self.depth_model_name = config['depth_model'].lower()
         self.depth_shift = config['depth_shift']
         self.very_far_depth = config['sky_hard_depth'] * 2
@@ -242,20 +236,6 @@ class FrameSyn(torch.nn.Module):
         args:
             image: [1, 3, 512, 512]
         """
-        # Marigold-my-normal
-        # normal = self.normal_estimator(
-        #     image,
-        #     denoising_steps=10,     # optional
-        #     ensemble_size=1,       # optional
-        #     processing_res=0,     # optional
-        #     match_input_res=True,   # optional
-        #     batch_size=0,           # optional
-        #     color_map=None,   # optional
-        #     show_progress_bar=True, # optional
-        #     logger=self.logger,
-        # )
-        # normal = normal[None].to(dtype=torch.float32)
-        from model_calls import ModelCalls
         normal = ModelCalls.call_normal_estimator(image)
         return normal
         
@@ -268,35 +248,9 @@ class FrameSyn(torch.nn.Module):
             mask_align: if not None, then use this mask to align the depth map.
             save_depth_to_cache: if True, then save the depth map to cache.
         """
-        assert self.depth_model is not None
-        if self.depth_model_name == "midas":
-            # MiDaS
-            disparity = self.depth_model(dpt_transform(image))
-            disparity = torch.nn.functional.interpolate(
-                disparity.unsqueeze(1),
-                size=image.shape[2:],
-                mode="bilinear",
-                align_corners=False,
-            )
-            disparity = disparity.clip(1e-6, max=None)
-            depth = 1 / disparity
-        if self.depth_model_name == "midas_v3.1":
-            img_transformed = dpt_512_transform(image)
-            disparity = self.depth_model(img_transformed)
-            disparity = torch.nn.functional.interpolate(
-                disparity.unsqueeze(1),
-                size=image.shape[2:],
-                mode="bilinear",
-                align_corners=False,
-            )
-            disparity = disparity.clip(1e-6, max=None)
-            depth = 1 / disparity
-        elif self.depth_model_name == "zoedepth":
-            # ZeoDepth
-            depth = self.depth_model(image)['metric_depth']
-        elif self.depth_model_name == "marigold":
+        if self.depth_model_name == "marigold":
             # Marigold
-            from model_calls import ModelCalls
+            # ModelCalls is imported at the top of the file
             depth = ModelCalls.call_depth_model(
                 image,
                 denoising_steps=diffusion_steps,
@@ -360,8 +314,6 @@ class FrameSyn(torch.nn.Module):
         if negative_prompt is None:
             negative_prompt = self.adaptive_negative_prompt + self.negative_inpainting_prompt if self.adaptive_negative_prompt != None else self.negative_inpainting_prompt
       
-        from model_calls import ModelCalls
-        
         inpainted_image = ModelCalls.call_inpainting_pipeline(
             prompt='' if self.use_noprompt else self.inpainting_prompt,
             negative_prompt=negative_prompt,
@@ -1312,12 +1264,11 @@ class KeyframeGen(FrameSyn):
         else:
             image = ToPILImage()(self.image_latest.squeeze())
             
-        from model_calls import ModelCalls, models
         segment_output = ModelCalls.call_segmentation_model(image)
         # Get image size for post-processing
         img_size = image.size[::-1] if hasattr(image, 'size') else (512, 512)
-        pred_semantic_map = models.segment_processor.post_process_semantic_segmentation(
-                                segment_output, target_sizes=[img_size])[0]
+        pred_semantic_map = ModelCalls.post_process_segmentation(
+                                segment_output, target_sizes=[img_size])
         sky_mask = pred_semantic_map == 2  # 2 for ade20k, 119 for coco
         if self.sky_erode_kernel_size > 0:
             sky_mask = erosion(sky_mask.float()[None, None], 
@@ -1336,12 +1287,12 @@ class KeyframeGen(FrameSyn):
             else:
                 image = ToPILImage()(self.image_latest.squeeze())
                 
-            from model_calls import ModelCalls, models
+            # ModelCalls is imported at the top of the file
             segment_output = ModelCalls.call_segmentation_model(image)
             # Get image size for post-processing
             img_size = image.size[::-1] if hasattr(image, 'size') else (512, 512)
-            pred_semantic_map = models.segment_processor.post_process_semantic_segmentation(
-                                    segment_output, target_sizes=[img_size])[0]
+            pred_semantic_map = ModelCalls.post_process_segmentation(
+                                    segment_output, target_sizes=[img_size])
             sem_map = pred_semantic_map
         # 3: floor; 6: road; 9: grass; 11: pavement; 13: earth; 26: sea; 29: field; 46: sand; 128: lake
         ground_mask = (sem_map == 3) | (sem_map == 6) | (sem_map == 9) | (sem_map == 11) | (sem_map == 13) | (sem_map == 26) | (sem_map == 29) | (sem_map == 46) | (sem_map == 128)
@@ -1381,12 +1332,12 @@ class KeyframeGen(FrameSyn):
         if pred_semantic_map is None:
             image = ToPILImage()(self.image_latest.squeeze())
             
-            from model_calls import ModelCalls, models
+            # ModelCalls is imported at the top of the file
             segment_output = ModelCalls.call_segmentation_model(image)
             # Get image size for post-processing
             img_size = image.size[::-1] if hasattr(image, 'size') else (512, 512)
-            pred_semantic_map = models.segment_processor.post_process_semantic_segmentation(
-                                    segment_output, target_sizes=[img_size])[0]
+            pred_semantic_map = ModelCalls.post_process_segmentation(
+                                    segment_output, target_sizes=[img_size])
 
         unique_elements = torch.unique(pred_semantic_map)
         masks = {str(element.item()): (pred_semantic_map == element) for element in unique_elements}

@@ -20,7 +20,7 @@ from util.stable_diffusion_inpaint import StableDiffusionInpaintPipeline
 from diffusers.models.attention_processor import AttnProcessor2_0
 from marigold_lcm.marigold_pipeline import MarigoldPipeline, MarigoldPipelineNormal, MarigoldNormalsPipeline
 
-from models.models import KeyframeGen, save_point_cloud_as_ply
+from key_frame_gen import KeyframeGen, save_point_cloud_as_ply
 from util.gs_utils import save_pc_as_3dgs, convert_pc_to_splat
 from util.chatGPT4 import TextpromptGen
 from util.general_utils import apply_depth_colormap, save_video
