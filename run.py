@@ -43,6 +43,9 @@ import warnings
 import os
 import copy
 warnings.filterwarnings("ignore")
+import dotenv
+
+dotenv.load_dotenv()
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS on the Flask app
@@ -648,13 +651,4 @@ if __name__ == "__main__":
     render_thread = threading.Thread(target=render_current_scene)
     render_thread.start()
 
-    POSTMORTEM = config['debug']
-    if POSTMORTEM:
-        try:
-            run(config)
-        except Exception as e:
-            print(e)
-            import ipdb
-            ipdb.post_mortem()
-    else:
-        run(config)
+    run(config)

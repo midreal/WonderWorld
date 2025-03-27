@@ -328,8 +328,8 @@ class FrameSyn(torch.nn.Module):
             rendered_image=padded_rendered_image
         )
         
-        # [1, 3, 512, 512]
-        inpainted_image = (inpainted_image / 2 + 0.5).clamp(0, 1).to(torch.float32)[None]
+        # Convert PIL Image to tensor [1, 3, 512, 512] 
+        inpainted_image = ToTensor()(inpainted_image).unsqueeze(0).to(self.device)
             
         post_mask = torch.from_numpy(mask).unsqueeze(0).unsqueeze(0).float() * 255
         

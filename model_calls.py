@@ -1,12 +1,22 @@
 from typing import List, Tuple, Union
 import torch
+import replicate
+import requests
+import os
+import dotenv
+import base64
 from transformers import OneFormerForUniversalSegmentation, OneFormerProcessor
 from diffusers import DDIMScheduler, EulerDiscreteScheduler
 from diffusers.models.attention_processor import AttnProcessor2_0
-from util.stable_diffusion_inpaint import StableDiffusionInpaintPipeline
 from marigold_lcm.marigold_pipeline import MarigoldPipeline, MarigoldNormalsPipeline
 from util.utils import prepare_scheduler
+import io
 from PIL import Image
+import numpy as np
+import time
+
+# Load environment variables
+dotenv.load_dotenv()
 
 class Models:
     """A container class that holds and initializes various AI models used in the application.
@@ -41,14 +51,8 @@ class Models:
         self.segment_processor = OneFormerProcessor.from_pretrained("shi-labs/oneformer_ade20k_swin_large")
         self.segment_model = OneFormerForUniversalSegmentation.from_pretrained("shi-labs/oneformer_ade20k_swin_large").to('cuda')
         
-        self.inpainting_pipeline = StableDiffusionInpaintPipeline.from_pretrained(
-            "stabilityai/stable-diffusion-2-inpainting",
-            safety_checker=None,
-            torch_dtype=torch.bfloat16,
-        ).to(device)
-        self.inpainting_pipeline.scheduler = DDIMScheduler.from_config(self.inpainting_pipeline.scheduler.config)
-        self.inpainting_pipeline.unet.set_attn_processor(AttnProcessor2_0())
-        self.inpainting_pipeline.vae.set_attn_processor(AttnProcessor2_0())
+        # Flux inpainting model ID
+        self.inpainting_pipeline = "zsxkib/flux-dev-inpainting:ca8350ff748d56b3ebbd5a12bd3436c2214262a4ff8619de9890ecc41751a008"
         
         self.depth_model = MarigoldPipeline.from_pretrained("prs-eth/marigold-v1-0", torch_dtype=torch.bfloat16).to(device)
         self.depth_model.scheduler = EulerDiscreteScheduler.from_config(self.depth_model.scheduler.config)
@@ -99,19 +103,76 @@ class ModelCalls:
         Returns:
             PIL.Image: The generated inpainted image
         """
-        return models.inpainting_pipeline(
-            prompt=prompt,
-            negative_prompt=negative_prompt,
-            image=image,
-            mask_image=mask_image,
-            num_inference_steps=num_inference_steps,
-            guidance_scale=guidance_scale,
-            height=height,
-            width=width,
-            self_guidance=self_guidance,
-            inpaint_mask=inpaint_mask,
-            rendered_image=rendered_image,
-        ).images[0]
+        # Upload images to imgbb and get URLs
+        def upload_to_imgbb(img):
+            if img is None:
+                return None
+            buffered = io.BytesIO()
+            img.save(buffered, format="PNG")
+            img_str = base64.b64encode(buffered.getvalue())
+            
+            # Upload to imgbb using API key from environment
+            url = "https://api.imgbb.com/1/upload"
+            payload = {
+                "key": os.getenv("IMGBB_API_KEY"),
+                "image": img_str
+            }
+            response = requests.post(url, payload)
+            
+            if response.status_code == 200 and response.json()['success']:
+                return response.json()['data']['url']
+            return None
+
+        # Prepare input image and mask URLs
+        image_url = upload_to_imgbb(image)
+        mask_url = upload_to_imgbb(mask_image)
+
+        if image_url is None or mask_url is None:
+            raise RuntimeError("Failed to upload images to imgbb - make sure to set your API key!")
+
+        # Set default values if not provided
+        if height is None:
+            height = image.height if image else 512
+        if width is None:
+            width = image.width if image else 512
+        if num_inference_steps is None:
+            num_inference_steps = 30
+
+        # Call Flux inpainting API with retries
+        max_retries = 3
+        retry_delay = 1  # seconds
+        
+        for attempt in range(max_retries):
+            try:
+                output = replicate.run(
+                    models.inpainting_pipeline,
+                    input={
+                    "image": image_url,
+                    "mask": mask_url,
+                    "prompt": prompt,
+                    "negative_prompt": negative_prompt,
+                    "width": width,
+                    "height": height,
+                    "num_inference_steps": num_inference_steps,
+                    "guidance_scale": guidance_scale,
+                    "num_outputs": 1,
+                    "output_format": "png"
+                    }
+                )
+
+                # Get the first output URL and download the image
+                output_url = next(iter(output))
+                response = requests.get(output_url)
+                if response.status_code == 200:
+                    break
+                    
+            except Exception as e:
+                if attempt == max_retries - 1:  # Last attempt
+                    raise RuntimeError(f"Failed to call inpainting API after {max_retries} attempts") from e
+                time.sleep(retry_delay)
+                continue
+        img = Image.open(io.BytesIO(response.content))
+        return img
 
     @staticmethod
     def call_depth_model(image: torch.Tensor,
