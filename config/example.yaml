@@ -1,5 +1,5 @@
-runs_dir: output/real_campus_2
-example_name: real_campus_2
+runs_dir: output/shanghai
+example_name: shanghai
 
 seed: 1
 # enable guided depth diffusion

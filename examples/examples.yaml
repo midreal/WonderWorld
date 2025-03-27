@@ -148,5 +148,33 @@
   content_prompt: Link taking adventure in a world brimming with magic and wonder, majestic mountains, river, boy 
   negative_prompt: ""
   background: ""
-
-
+- name: moon
+  image_filepath: examples/images/moon.png
+  style_prompt: animation
+  content_prompt: A serene, tranquil moonlit night, moon, stars, clouds, trees
+  negative_prompt: ""
+  background: ""
+- name: shanghai
+  image_filepath: examples/images/shanghai.png
+  style_prompt: DSLR 35mm landscape
+  content_prompt: Shanghai, China, skyscrapers
+  negative_prompt: ""
+  background: ""
+- name: ufo
+  image_filepath: examples/images/ufo.png
+  style_prompt: animation
+  content_prompt: A UFO hovering over
+  negative_prompt: ""
+  background: ""
+- name: volcano
+  image_filepath: examples/images/volcano.png
+  style_prompt: animation
+  content_prompt: An orange on volcano, lava
+  negative_prompt: ""
+  background: ""
+- name: whale
+  image_filepath: examples/images/whale.png
+  style_prompt: animation
+  content_prompt: whales swimming in the sky
+  negative_prompt: ""
+  background: ""
