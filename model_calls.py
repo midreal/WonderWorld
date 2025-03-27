@@ -1,6 +1,6 @@
 from typing import List, Tuple, Union
 import torch
-from transformers import OneFormerForUniversalSegmentation, OneFormerProcessor, ModelOutput
+from transformers import OneFormerForUniversalSegmentation, OneFormerProcessor
 from diffusers import DDIMScheduler, EulerDiscreteScheduler
 from diffusers.models.attention_processor import AttnProcessor2_0
 from util.stable_diffusion_inpaint import StableDiffusionInpaintPipeline
@@ -214,12 +214,12 @@ class ModelCalls:
         return outputs
 
     @staticmethod
-    def post_process_segmentation(segment_output: ModelOutput,
+    def post_process_segmentation(segment_output,
                                 target_sizes: List[Tuple[int, int]] = None) -> torch.Tensor:
         """Post-process segmentation model output into semantic map.
         
         Args:
-            segment_output (ModelOutput): Raw output from segmentation model
+            segment_output: Raw output from segmentation model
             target_sizes (List[Tuple[int, int]], optional): List of (height, width) tuples
                 for resizing output. Defaults to [(512, 512)].
                 
