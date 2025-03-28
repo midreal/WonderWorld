@@ -150,9 +150,19 @@ class ModelCalls:
                     "x-key": API_KEY
                 }
                 
+                # Download and encode images
+                def download_and_encode_image(url):
+                    response = requests.get(url)
+                    if response.status_code == 200:
+                        return base64.b64encode(response.content).decode('utf-8')
+                    raise Exception(f"Failed to download image from {url}")
+
+                image_base64 = download_and_encode_image(image_url)
+                mask_base64 = download_and_encode_image(mask_url)
+
                 payload = {
-                    "image": image_url,
-                    "mask": mask_url,
+                    "image": image_base64,
+                    "mask": mask_base64,
                     "prompt": prompt,
                     "steps": num_inference_steps,
                     "guidance": guidance_scale,
