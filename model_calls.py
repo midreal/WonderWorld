@@ -1,6 +1,5 @@
 from typing import List, Tuple, Union
 import torch
-import replicate
 import requests
 import os
 import dotenv
@@ -51,8 +50,7 @@ class Models:
         self.segment_processor = OneFormerProcessor.from_pretrained("shi-labs/oneformer_ade20k_swin_large")
         self.segment_model = OneFormerForUniversalSegmentation.from_pretrained("shi-labs/oneformer_ade20k_swin_large").to('cuda')
         
-        # Flux inpainting model ID
-        self.inpainting_pipeline = "zsxkib/flux-dev-inpainting:ca8350ff748d56b3ebbd5a12bd3436c2214262a4ff8619de9890ecc41751a008"
+        # No need to store model ID for direct API access
         
         self.depth_model = MarigoldPipeline.from_pretrained("prs-eth/marigold-v1-0", torch_dtype=torch.bfloat16).to(device)
         self.depth_model.scheduler = EulerDiscreteScheduler.from_config(self.depth_model.scheduler.config)
@@ -141,29 +139,60 @@ class ModelCalls:
         # Call Flux inpainting API with retries
         max_retries = 3
         retry_delay = 1  # seconds
+        API_BASE = "https://api.us1.bfl.ai"
+        API_KEY = os.getenv('BFL_API_KEY')
         
         for attempt in range(max_retries):
             try:
-                output = replicate.run(
-                    models.inpainting_pipeline,
-                    input={
+                # Submit the generation task
+                headers = {
+                    "Content-Type": "application/json",
+                    "x-key": API_KEY
+                }
+                
+                payload = {
                     "image": image_url,
                     "mask": mask_url,
                     "prompt": prompt,
-                    "negative_prompt": negative_prompt,
-                    "width": width,
-                    "height": height,
-                    "num_inference_steps": num_inference_steps,
-                    "guidance_scale": guidance_scale,
-                    "num_outputs": 1,
-                    "output_format": "png"
-                    }
+                    "steps": num_inference_steps,
+                    "guidance": guidance_scale,
+                    "output_format": "png",
+                    "safety_tolerance": 2
+                }
+                
+                # Submit task
+                response = requests.post(
+                    f"{API_BASE}/v1/flux-pro-1.0-fill",
+                    headers=headers,
+                    json=payload
                 )
-
-                # Get the first output URL and download the image
-                output_url = next(iter(output))
-                response = requests.get(output_url)
+                
                 if response.status_code == 200:
+                    task_data = response.json()
+                    task_id = task_data["id"]
+                    
+                    # Poll for results
+                    while True:
+                        result_response = requests.get(
+                            f"{API_BASE}/v1/get_result",
+                            params={"id": task_id},
+                            headers=headers
+                        )
+                        
+                        if result_response.status_code == 200:
+                            result_data = result_response.json()
+                            status = result_data["status"]
+                            
+                            if status == "Ready":
+                                result = result_data["result"]
+                                if result and 'sample' in result:
+                                    response = requests.get(result['sample'])
+                                    if response.status_code == 200:
+                                        break
+                            elif status in ["Error", "Request Moderated", "Content Moderated"]:
+                                raise RuntimeError(f"Task failed with status: {status}")
+                            else:
+                                time.sleep(1)  # Wait before polling again
                     break
                     
             except Exception as e:
