@@ -142,12 +142,12 @@ def run(config):
     sky_mask = kf_gen.generate_sky_mask().float()
     kf_gen.generate_sky_pointcloud(syncdiffusion_model, image=kf_gen.image_latest, mask=sky_mask, gen_sky=config['gen_sky_image'], style=style_prompt)
 
+    scene_name = content_prompt
     kf_gen.recompose_image_latest_and_set_current_pc(scene_name=scene_name)
     
     pt_gen = TextpromptGen(kf_gen.run_dir, isinstance(control_text, list))
     
     content_list = content_prompt.split(',')
-    scene_name = content_list[0]
     entities = content_list[1:]
     scene_dict = {'scene_name': scene_name, 'entities': entities, 'style': style_prompt, 'background': background_prompt}
     inpainting_prompt = content_prompt
@@ -274,8 +274,9 @@ def run(config):
             scene_dict = pt_gen.wonder_next_scene(scene_name=scene_name, entities=scene_dict['entities'], style=style_prompt, background=scene_dict['background'], change_scene_name_by_user=change_scene_name_by_user)
             change_scene_name_by_user = False
         inpainting_prompt = pt_gen.generate_prompt(style=style_prompt, entities=scene_dict['entities'], background=scene_dict['background'], scene_name=scene_dict['scene_name'])
-        scene_name = scene_dict['scene_name'] if isinstance(scene_dict['scene_name'], str) else scene_dict['scene_name'][0]
-        
+        # scene_name = scene_dict['scene_name'] if isinstance(scene_dict['scene_name'], str) else scene_dict['scene_name'][0]
+        if scene_name is not None:
+            inpainting_prompt  = scene_name
         ###### ------------------ Keyframe (the major part of point clouds) generation ------------------ ######        
         kf_gen.set_kf_param(inpainting_resolution=config['inpainting_resolution_gen'],
                             inpainting_prompt=inpainting_prompt, adaptive_negative_prompt=adaptive_negative_prompt)

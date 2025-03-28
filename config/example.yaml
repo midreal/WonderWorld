@@ -1,5 +1,5 @@
-runs_dir: output/real_campus_2
-example_name: real_campus_2
+runs_dir: output/avatar_world_5
+example_name: avatar_world_5
 
 seed: 1
 # enable guided depth diffusion

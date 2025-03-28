@@ -6,6 +6,8 @@ from util.stable_diffusion_inpaint import StableDiffusionInpaintPipeline
 from marigold_lcm.marigold_pipeline import MarigoldPipeline, MarigoldNormalsPipeline
 from util.utils import prepare_scheduler
 from PIL import Image
+import os
+import datetime
 
 class Models:
     def __init__(self):
@@ -47,6 +49,50 @@ class ModelCalls:
     def call_inpainting_pipeline(prompt="", negative_prompt=None, image=None, mask_image=None, 
                                num_inference_steps=None, guidance_scale=7.5, height=None, width=None, 
                                self_guidance=None, inpaint_mask=None, rendered_image=None):
+        # Create directory for saving images if it doesn't exist
+        save_dir = "/home/4dtc/WonderWorld/saved_images"
+        os.makedirs(save_dir, exist_ok=True)
+        
+        # Generate a timestamp for unique filenames
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        # Save the input image if it exists
+        if image is not None:
+            if isinstance(image, torch.Tensor):
+                # Convert tensor to PIL Image if needed
+                if image.dim() == 4:  # [B, C, H, W]
+                    pil_image = Image.fromarray((image[0].permute(1, 2, 0).cpu().numpy() * 255).astype('uint8'))
+                elif image.dim() == 3:  # [C, H, W]
+                    pil_image = Image.fromarray((image.permute(1, 2, 0).cpu().numpy() * 255).astype('uint8'))
+                else:
+                    pil_image = image
+            else:
+                pil_image = image
+                
+            image_path = os.path.join(save_dir, f"input_image_{timestamp}.png")
+            pil_image.save(image_path)
+            print(f"Input image saved to: {image_path}")
+        
+        # Save the mask image if it exists
+        if mask_image is not None:
+            if isinstance(mask_image, torch.Tensor):
+                # Convert tensor to PIL Image if needed
+                if mask_image.dim() == 4:  # [B, C, H, W]
+                    pil_mask = Image.fromarray((mask_image[0].permute(1, 2, 0).cpu().numpy() * 255).astype('uint8'))
+                elif mask_image.dim() == 3:  # [C, H, W]
+                    if mask_image.shape[0] == 1:  # Single channel mask
+                        pil_mask = Image.fromarray((mask_image[0].cpu().numpy() * 255).astype('uint8'))
+                    else:
+                        pil_mask = Image.fromarray((mask_image.permute(1, 2, 0).cpu().numpy() * 255).astype('uint8'))
+                else:
+                    pil_mask = mask_image
+            else:
+                pil_mask = mask_image
+                
+            mask_path = os.path.join(save_dir, f"mask_image_{timestamp}.png")
+            pil_mask.save(mask_path)
+            print(f"Mask image saved to: {mask_path}")
+        
         return models.inpainting_pipeline(
             prompt=prompt,
             negative_prompt=negative_prompt,

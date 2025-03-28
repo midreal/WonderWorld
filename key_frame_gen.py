@@ -313,14 +313,15 @@ class FrameSyn(torch.nn.Module):
             self.inpainting_prompt = inpainting_prompt
         if negative_prompt is None:
             negative_prompt = self.adaptive_negative_prompt + self.negative_inpainting_prompt if self.adaptive_negative_prompt != None else self.negative_inpainting_prompt
-      
+        
+        print("self.inpainting_prompt:", self.inpainting_prompt)
         inpainted_image = ModelCalls.call_inpainting_pipeline(
-            prompt='' if self.use_noprompt else self.inpainting_prompt,
+            prompt=self.inpainting_prompt,
             negative_prompt=negative_prompt,
             image=init_image,
             mask_image=mask_image,
             num_inference_steps=diffusion_steps,
-            guidance_scale=0 if self.use_noprompt else 7.5,
+            guidance_scale=7.5,
             height=self.inpainting_resolution,
             width=self.inpainting_resolution,
             self_guidance=self_guidance,
@@ -1099,7 +1100,8 @@ class KeyframeGen(FrameSyn):
 
         # Remove points below the ground height
         sky_rows_idx = torch.where(mask.any(dim=1))[0]
-        max_idx = sky_rows_idx.max().item()
+        # max_idx = sky_rows_idx.max().item()
+        max_idx = sky_rows_idx.flatten().max(dim=0)[0].item() if sky_rows_idx.numel() > 0 else 0
         ground_threshold = -0.0003 if max_idx <= 255 else -0.003
         mask_above_ground = new_points_3d[:, 1] >= ground_threshold
         new_points_3d = new_points_3d[mask_above_ground]
