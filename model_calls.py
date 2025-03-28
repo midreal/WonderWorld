@@ -51,8 +51,8 @@ class Models:
         self.segment_processor = OneFormerProcessor.from_pretrained("shi-labs/oneformer_ade20k_swin_large")
         self.segment_model = OneFormerForUniversalSegmentation.from_pretrained("shi-labs/oneformer_ade20k_swin_large").to('cuda')
         
-        # Flux inpainting model ID
-        self.inpainting_pipeline = "zsxkib/flux-dev-inpainting:ca8350ff748d56b3ebbd5a12bd3436c2214262a4ff8619de9890ecc41751a008"
+        # Flux inpainting API URL
+        self.inpainting_url = "http://34.143.175.19:7779/generate"
         
         self.depth_model = MarigoldPipeline.from_pretrained("prs-eth/marigold-v1-0", torch_dtype=torch.bfloat16).to(device)
         self.depth_model.scheduler = EulerDiscreteScheduler.from_config(self.depth_model.scheduler.config)
@@ -142,36 +142,41 @@ class ModelCalls:
         max_retries = 3
         retry_delay = 1  # seconds
         
+        payload = {
+            "image": image_url,
+            "mask": mask_url,
+            "prompt": prompt,
+            "width": width,
+            "height": height,
+            "num_inference_steps": num_inference_steps,
+            "guidance_scale": guidance_scale,
+            "num_outputs": 1,
+            "output_format": "png"
+        }
+        
+        if negative_prompt:
+            payload["negative_prompt"] = negative_prompt
+        
         for attempt in range(max_retries):
             try:
-                output = replicate.run(
-                    models.inpainting_pipeline,
-                    input={
-                    "image": image_url,
-                    "mask": mask_url,
-                    "prompt": prompt,
-                    "negative_prompt": negative_prompt,
-                    "width": width,
-                    "height": height,
-                    "num_inference_steps": num_inference_steps,
-                    "guidance_scale": guidance_scale,
-                    "num_outputs": 1,
-                    "output_format": "png"
-                    }
-                )
-
-                # Get the first output URL and download the image
-                output_url = next(iter(output))
-                response = requests.get(output_url)
-                if response.status_code == 200:
-                    break
+                response = requests.post(models.inpainting_url, json=payload)
+                response.raise_for_status()
+                
+                # Parse response and get first base64 image
+                result = response.json()
+                if not result.get("images") or not result["images"][0]:
+                    raise RuntimeError("No image data in response")
+                
+                # Decode base64 image
+                image_data = base64.b64decode(result["images"][0])
+                break
                     
             except Exception as e:
                 if attempt == max_retries - 1:  # Last attempt
                     raise RuntimeError(f"Failed to call inpainting API after {max_retries} attempts") from e
                 time.sleep(retry_delay)
                 continue
-        img = Image.open(io.BytesIO(response.content))
+        img = Image.open(io.BytesIO(image_data))
         return img
 
     @staticmethod
