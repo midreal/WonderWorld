@@ -6,6 +6,12 @@ from util.stable_diffusion_inpaint import StableDiffusionInpaintPipeline
 from marigold_lcm.marigold_pipeline import MarigoldPipeline, MarigoldNormalsPipeline
 from util.utils import prepare_scheduler
 from PIL import Image
+import numpy as np
+from PIL import Image
+import os
+import time
+import cv2
+import matplotlib
 
 class Models:
     def __init__(self):
@@ -82,6 +88,15 @@ class ModelCalls:
             guidance_steps=guidance_steps,
             logger=logger,
         )
+        
+        # 保存深度图到本地
+        os.makedirs('depth_outputs', exist_ok=True)
+        depth_np = depth.to(dtype=torch.float32).cpu().numpy()  # 先转换为float32再转为numpy数组
+        depth_img = (depth_np * 255).astype(np.uint8)  # 归一化并转换为8位图像
+        depth_img = Image.fromarray(depth_img)
+        save_path = os.path.join('depth_outputs', f'depth_{int(time.time())}.png')
+        depth_img.save(save_path)
+        
         depth = depth[None, None, :].to(dtype=torch.float32)
         depth /= 200
         return depth
@@ -126,3 +141,79 @@ class ModelCalls:
             target_sizes = [(512, 512)]
         return models.segment_processor.post_process_semantic_segmentation(
             segment_output, target_sizes=target_sizes)[0]
+
+    @staticmethod
+    def call_depth_anything_v2(image, mask=None, normalize_output=True):
+        """
+        使用Depth Anything V2 Large模型进行深度估计
+        Args:
+            image: torch.Tensor [B, C, H, W] 或 [C, H, W]，值范围[0,1]
+            mask: 不使用
+            normalize_output: 是否将输出标准化到[0,1]范围
+        Returns:
+            depth: torch.Tensor [1, 1, H, W]，深度图
+        """
+        from DepthAnythingV2.depth_anything_v2.dpt import DepthAnythingV2
+        import torch
+        import numpy as np
+        from PIL import Image
+
+        # 固定使用vitl模型配置
+        model_config = {
+            'encoder': 'vitl',
+            'features': 256,
+            'out_channels': [256, 512, 1024, 1024]
+        }
+
+        # 确保输入是正确的格式
+        if image.dim() == 4:  # [B, C, H, W]
+            image = image.squeeze(0)
+        
+        # 转换为PIL图像
+        image_input = (image * 255).byte().permute(1, 2, 0)
+        image_input = Image.fromarray(image_input.cpu().numpy())
+        
+        # 初始化模型
+        DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+        model = DepthAnythingV2(**model_config)
+        model.load_state_dict(torch.load('/home/4dtc/Depth-Anything-V2/checkpoints/depth_anything_v2_vitl.pth', map_location='cpu'))
+        model = model.to(DEVICE).eval()
+
+        # 获取深度图
+        with torch.no_grad():
+            # 转换为numpy数组进行处理
+            image_np = np.array(image_input)
+            
+            # 获取原始深度图
+            depth = model.infer_image(image_np)  # 已经是numpy数组
+            
+            # 保存深度图到本地
+            os.makedirs('depth_outputs_new', exist_ok=True)
+            timestamp = int(time.time())
+            
+            # 保存原始深度值
+            np.save(os.path.join('depth_outputs_new', f'depth_raw_{timestamp}.npy'), depth)
+            
+            # 归一化并保存可视化结果 - 反转深度值使得近处更暗
+            depth_normalized = (255 - ((depth - depth.min()) / (depth.max() - depth.min()) * 255)).astype(np.uint8)
+            
+            # 转换灰度图为3通道用于显示
+            depth_gray = np.repeat(depth_normalized[..., np.newaxis], 3, axis=-1)
+            
+            # 创建分隔区域
+            split_region = np.ones((image_np.shape[0], 50, 3), dtype=np.uint8) * 255
+            
+            # 组合原图和深度图
+            combined_result = cv2.hconcat([image_np[..., ::-1], split_region, depth_gray])
+            
+            # 保存组合图和单独的深度图
+            basename = f'depth_{timestamp}'
+            cv2.imwrite(os.path.join('depth_outputs_new', f'{basename}_combined.png'), combined_result)
+            cv2.imwrite(os.path.join('depth_outputs_new', f'{basename}_depth.png'), depth_normalized)
+            
+            # 转换为tensor返回，保持原始深度值
+            depth_tensor = torch.from_numpy(depth)[None, None, :].to(dtype=torch.float32)  # [1, 1, H, W]
+            depth /= 200
+            # 反转深度值，使得近处更暗
+            # depth_tensor = 1.0 - depth_tensor
+            return depth_tensor.to(DEVICE)

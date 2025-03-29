@@ -10,7 +10,7 @@ use_gpt: False
 debug: True
 
 # depth model and camera/depth parameters
-depth_model: marigold
+depth_model: depth_anything
 camera_speed: 0.001
 fg_depth_range: 0.015
 depth_shift: 0.001

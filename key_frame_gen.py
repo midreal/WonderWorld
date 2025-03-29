@@ -248,6 +248,11 @@ class FrameSyn(torch.nn.Module):
             mask_align: if not None, then use this mask to align the depth map.
             save_depth_to_cache: if True, then save the depth map to cache.
         """
+        import cv2
+        import os
+        import numpy as np
+        import matplotlib.pyplot as plt
+
         if self.depth_model_name == "marigold":
             # Marigold
             # ModelCalls is imported at the top of the file
@@ -261,9 +266,31 @@ class FrameSyn(torch.nn.Module):
                 mask_farther=mask_farther,
                 logger=self.logger
             )
+        elif self.depth_model_name == "depth_anything":
+            # Depth Anything V2
+            depth = ModelCalls.call_depth_anything_v2(
+                image,
+                mask=mask_align,
+                normalize_output=False  # 获取原始深度值
+            )
 
         depth = depth + self.depth_shift
         disparity = 1 / depth
+
+        # 保存深度图到本地文件
+        import os
+        import time
+        from PIL import Image
+        
+        os.makedirs('depth_outputs_final', exist_ok=True)
+        depth_np = depth.squeeze().cpu().numpy()  # 转换为numpy数组
+        depth_min, depth_max = depth_np.min(), depth_np.max()
+        depth_normalized = ((depth_np - depth_min) / (depth_max - depth_min) * 255).astype(np.uint8)
+        depth_img = Image.fromarray(depth_normalized)
+        timestamp = int(time.time())
+        save_path = os.path.join('depth_outputs_final', f'depth_{timestamp}.png')
+        depth_img.save(save_path)
+        print(f"Depth map saved to: {save_path}")
 
         if archive_output:
             self.depth_latest = depth
@@ -568,7 +595,7 @@ class FrameSyn(torch.nn.Module):
         return train_datas
 
     @torch.no_grad()
-    def convert_to_3dgs_traindata_latest(self, xyz_scale=1.0, points_3d=None, colors=None, use_no_loss_mask=False, use_only_latest_frame=True):
+    def convert_to_3dgs_traindata_latest(self, xyz_scale=1.0, points_3d=None, colors=None, use_no_loss_mask=True, use_only_latest_frame=True):
         """
         args:
             xyz_scale: scale the xyz coordinates by this factor (so that the value range is better for 3DGS optimization and web-viewing).
@@ -1354,10 +1381,10 @@ class KeyframeGen(FrameSyn):
                 continue
             #-- 1. Dilate each segment --#
             mask = dilation((mask).float()[None, None], 
-                            kernel=dilation_kernel).squeeze().cpu() > 0.5
+                            kernel=dilation_kernel).squeeze().cpu().numpy() > 0.5
             # 4: tree; 6: boat; 83: truck; 87: street lamp
             if id in ['4', '76', '83', '87']:
-                mask_disocclusion |= mask.numpy()
+                mask_disocclusion |= mask
                 continue
             labeled_array, num_features = label(mask)
             for i in range(1, num_features+1):
@@ -1382,7 +1409,7 @@ class KeyframeGen(FrameSyn):
                     continue
                 #-- 8. [Find non-road region] --#
                 mask_i_erosion = erosion(torch.from_numpy(mask_i).float()[None, None], 
-                            kernel=dilation_kernel.cpu()).squeeze() > 0.5
+                            kernel=dilation_kernel.cpu()).squeeze().cpu().numpy() > 0.5
                 disp_pixels = disparity_np[mask_i_erosion]
                 p20 = np.percentile(disp_pixels, 20)
                 p80 = np.percentile(disp_pixels, 80)
@@ -1410,11 +1437,11 @@ class KeyframeGen(FrameSyn):
         stitch_mask = erosion(mask_disocclusion.float().to(self.device),
                             kernel=torch.ones(5, 5).to(self.device))  # keep it slightly dilated to prevent dirty artifacts
         self.image_latest = soft_stitching(inpainter_output, self.image_latest_init, stitch_mask, sigma=1, blur_size=3)
-        ToPILImage()(grad_magnitude_mask.float()).save(self.run_dir / 'images' / 'layer' / f'{self.kf_idx:02d}_grad_magnitude_mask.png')
-        ToPILImage()((self.image_latest.cpu() * (~mask_disocclusion).float())[0]).save(self.run_dir / 'images' / 'layer' / f'{self.kf_idx:02d}_mask_disocclusion.png')
-        ToPILImage()((self.image_latest_init * inpaint_mask.float())[0]).save(self.run_dir / 'images' / 'layer' / f'{self.kf_idx:02d}_inpaint_mask.png')
-        ToPILImage()(self.image_latest_init[0]).save(self.run_dir / 'images' / 'layer' / f'{self.kf_idx:02d}_image_init.png')
-        ToPILImage()(self.image_latest[0]).save(self.run_dir / 'images' / 'layer' / f'{self.kf_idx:02d}_remove_disocclusion.png')
+        ToPILImage()(grad_magnitude_mask.float()).save(self.run_dir / 'images' / 'layer' / f'{self.kf_idx}_grad_magnitude_mask.png')
+        ToPILImage()((self.image_latest.cpu() * (~mask_disocclusion).float())[0]).save(self.run_dir / 'images' / 'layer' / f'{self.kf_idx}_mask_disocclusion.png')
+        ToPILImage()((self.image_latest_init * inpaint_mask.float())[0]).save(self.run_dir / 'images' / 'layer' / f'{self.kf_idx}_inpaint_mask.png')
+        ToPILImage()(self.image_latest_init[0]).save(self.run_dir / 'images' / 'layer' / f'{self.kf_idx}_image_init.png')
+        ToPILImage()(self.image_latest[0]).save(self.run_dir / 'images' / 'layer' / f'{self.kf_idx}_remove_disocclusion.png')
 
         
     @torch.no_grad()
