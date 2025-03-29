@@ -148,5 +148,10 @@
   content_prompt: Link taking adventure in a world brimming with magic and wonder, majestic mountains, river, boy 
   negative_prompt: ""
   background: ""
-
+- name: kaijie_chen_7_a_rock_cliff_with_a_cave_in_the_wall_--ar_11_--_bdb61c7e-257d-4f68-9e2b-6a44699a3f26_1
+  image_filepath: examples/images/kaijie_chen_7_a_rock_cliff_with_a_cave_in_the_wall_--ar_11_--_bdb61c7e-257d-4f68-9e2b-6a44699a3f26_1.png
+  style_prompt: animation
+  content_prompt: a rock cliff with a cave in the wall 
+  negative_prompt: ""
+  background: ""
 

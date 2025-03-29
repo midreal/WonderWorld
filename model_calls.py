@@ -92,13 +92,29 @@ class ModelCalls:
         # 保存深度图到本地
         os.makedirs('depth_outputs', exist_ok=True)
         depth_np = depth.to(dtype=torch.float32).cpu().numpy()  # 先转换为float32再转为numpy数组
+        print("\nBefore multiplication depth_np stats:")
+        print(f"Min: {depth_np.min()}, Max: {depth_np.max()}, Mean: {depth_np.mean()}")
+        print(f"Shape: {depth_np.shape}, dtype: {depth_np.dtype}")
+        
         depth_img = (depth_np * 255).astype(np.uint8)  # 归一化并转换为8位图像
+        print("\nAfter multiplication depth_img stats:")
+        print(f"Min: {depth_img.min()}, Max: {depth_img.max()}, Mean: {depth_img.mean()}")
+        print(f"Shape: {depth_img.shape}, dtype: {depth_img.dtype}")
+        
         depth_img = Image.fromarray(depth_img)
         save_path = os.path.join('depth_outputs', f'depth_{int(time.time())}.png')
         depth_img.save(save_path)
         
         depth = depth[None, None, :].to(dtype=torch.float32)
+        print("\nBefore division depth stats:")
+        print(f"Min: {depth.min().item()}, Max: {depth.max().item()}, Mean: {depth.mean().item()}")
+        print(f"Shape: {depth.shape}, dtype: {depth.dtype}")
+        
         depth /= 200
+        print("\nAfter division by 200 depth stats:")
+        print(f"Min: {depth.min().item()}, Max: {depth.max().item()}, Mean: {depth.mean().item()}")
+        print(f"Shape: {depth.shape}, dtype: {depth.dtype}")
+        
         return depth
 
     @staticmethod
@@ -186,6 +202,20 @@ class ModelCalls:
             
             # 获取原始深度图
             depth = model.infer_image(image_np)  # 已经是numpy数组
+            print("Original depth stats:")
+            print(f"Min: {depth.min()}, Max: {depth.max()}, Mean: {depth.mean()}")
+            print(f"Shape: {depth.shape}, dtype: {depth.dtype}")
+            
+            # 先归一化到0-1范围
+            depth = (depth - depth.min()) / (depth.max() - depth.min())
+            # 然后反转，使近处为0（黑色），远处为1（白色）
+            depth = 1 - depth
+            # # 最后缩放到0-255范围
+            # depth = depth * 255
+            
+            print("\nAfter normalization and inversion depth stats:")
+            print(f"Min: {depth.min()}, Max: {depth.max()}, Mean: {depth.mean()}")
+            print(f"Shape: {depth.shape}, dtype: {depth.dtype}")
             
             # 保存深度图到本地
             os.makedirs('depth_outputs_new', exist_ok=True)
@@ -194,8 +224,8 @@ class ModelCalls:
             # 保存原始深度值
             np.save(os.path.join('depth_outputs_new', f'depth_raw_{timestamp}.npy'), depth)
             
-            # 归一化并保存可视化结果 - 反转深度值使得近处更暗
-            depth_normalized = (255 - ((depth - depth.min()) / (depth.max() - depth.min()) * 255)).astype(np.uint8)
+            # 归一化并保存可视化结果
+            depth_normalized = depth.astype(np.uint8)
             
             # 转换灰度图为3通道用于显示
             depth_gray = np.repeat(depth_normalized[..., np.newaxis], 3, axis=-1)
@@ -213,7 +243,14 @@ class ModelCalls:
             
             # 转换为tensor返回，保持原始深度值
             depth_tensor = torch.from_numpy(depth)[None, None, :].to(dtype=torch.float32)  # [1, 1, H, W]
-            depth /= 200
+            
+            print("\nBefore division depth stats:")
+            print(f"Min: {depth.min().item()}, Max: {depth.max().item()}, Mean: {depth.mean().item()}")
+            print(f"Shape: {depth.shape}, dtype: {depth.dtype}")
+            depth /= 200  # 将深度值除以200进行归一化
+            print("\nAfter division by 200 depth stats:")
+            print(f"Min: {depth.min().item()}, Max: {depth.max().item()}, Mean: {depth.mean().item()}")
+            print(f"Shape: {depth.shape}, dtype: {depth.dtype}")
             # 反转深度值，使得近处更暗
             # depth_tensor = 1.0 - depth_tensor
             return depth_tensor.to(DEVICE)
