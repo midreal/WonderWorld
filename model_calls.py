@@ -110,6 +110,7 @@ class ModelCalls:
              tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp_mask, \
              tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp_feather_mask:
             try:
+                print("Preparing image and mask...")
                 # Save original images
                 image.save(tmp_image.name, format='PNG')
                 mask_image.save(tmp_mask.name, format='PNG')
@@ -122,6 +123,7 @@ class ModelCalls:
                 img_w_mask = mask_utils.combine(tmp_image.name, tmp_feather_mask.name)
                 
                 # Upload to OSS
+                print("Uploading image to OSS...")
                 task_id = f"inpainting_{int(time.time())}"
                 # Convert PIL image to bytes
                 img_byte_arr = io.BytesIO()
@@ -131,6 +133,8 @@ class ModelCalls:
                 
                 if not image_url:
                     raise RuntimeError("Failed to upload image to OSS")
+
+                print("Image uploaded to OSS")
                     
             finally:
                 # Cleanup temporary files
@@ -150,6 +154,15 @@ class ModelCalls:
             num_inference_steps = 30
 
         print("image_url", image_url)
+        # write image_url to artifacts/inpainting_timestamp.png
+        timestamp = int(time.time())
+        inpaint_image_path = f"artifacts/inpainting_{timestamp}.png"
+        response = requests.get(image_url)
+        if response.status_code != 200:
+            raise RuntimeError(f"Failed to download image from OSS, status code: {response.status_code}")
+        with open(inpaint_image_path, "wb") as f:
+            f.write(response.content)
+        
         output = replicate.run(
             "black-forest-labs/flux-fill-pro",
             input={
@@ -168,6 +181,11 @@ class ModelCalls:
         response = requests.get(output)
         if response.status_code != 200:
             raise RuntimeError(f"Failed to download image from replicate, status code: {response.status_code}")
+        
+        # write image to artifacts/result_timestamp.png
+        result_image_path = f"artifacts/result_{timestamp}.png"
+        with open(result_image_path, "wb") as f:
+            f.write(response.content)
         
         img = Image.open(io.BytesIO(response.content))
         return img
