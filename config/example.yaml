@@ -1,5 +1,5 @@
-runs_dir: output/kaijie_chen_7_a_rock_cliff_with_a_cave_in_the_wall_--ar_11_--_bdb61c7e-257d-4f68-9e2b-6a44699a3f26_1
-example_name: kaijie_chen_7_a_rock_cliff_with_a_cave_in_the_wall_--ar_11_--_bdb61c7e-257d-4f68-9e2b-6a44699a3f26_1
+runs_dir: output/village_monet
+example_name: village_monet
 
 seed: 1
 # enable guided depth diffusion

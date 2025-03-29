@@ -274,7 +274,7 @@ class FrameSyn(torch.nn.Module):
                 normalize_output=False  # 获取原始深度值
             )
 
-        depth = depth + self.depth_shift
+        depth = (depth + self.depth_shift) * 0.3
         disparity = 1 / depth
 
         # 保存深度图到本地文件
