@@ -1,5 +1,5 @@
-runs_dir: output/shanghai
-example_name: shanghai
+runs_dir: output/moon
+example_name: moon
 
 seed: 1
 # enable guided depth diffusion

@@ -2,6 +2,7 @@ from typing import List, Tuple, Union
 import torch
 import requests
 import os
+import tempfile
 import dotenv
 import base64
 from transformers import OneFormerForUniversalSegmentation, OneFormerProcessor
@@ -13,6 +14,9 @@ import io
 from PIL import Image
 import numpy as np
 import time
+import mask_utils
+from utils_oss import upload_to_oss
+import replicate
 
 # Load environment variables
 dotenv.load_dotenv()
@@ -101,32 +105,41 @@ class ModelCalls:
         Returns:
             PIL.Image: The generated inpainted image
         """
-        # Upload images to imgbb and get URLs
-        def upload_to_imgbb(img):
-            if img is None:
-                return None
-            buffered = io.BytesIO()
-            img.save(buffered, format="PNG")
-            img_str = base64.b64encode(buffered.getvalue())
-            
-            # Upload to imgbb using API key from environment
-            url = "https://api.imgbb.com/1/upload"
-            payload = {
-                "key": os.getenv("IMGBB_API_KEY"),
-                "image": img_str
-            }
-            response = requests.post(url, payload)
-            
-            if response.status_code == 200 and response.json()['success']:
-                return response.json()['data']['url']
-            return None
-
-        # Prepare input image and mask URLs
-        image_url = upload_to_imgbb(image)
-        mask_url = upload_to_imgbb(mask_image)
-
-        if image_url is None or mask_url is None:
-            raise RuntimeError("Failed to upload images to imgbb - make sure to set your API key!")
+        # Save input images to temporary files
+        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp_image, \
+             tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp_mask, \
+             tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp_feather_mask:
+            try:
+                # Save original images
+                image.save(tmp_image.name, format='PNG')
+                mask_image.save(tmp_mask.name, format='PNG')
+                
+                # Create feathered mask
+                feather_mask = mask_utils.feather(tmp_mask.name)
+                feather_mask.save(tmp_feather_mask.name, format='PNG')
+                
+                # Combine image with feathered mask
+                img_w_mask = mask_utils.combine(tmp_image.name, tmp_feather_mask.name)
+                
+                # Upload to OSS
+                task_id = f"inpainting_{int(time.time())}"
+                # Convert PIL image to bytes
+                img_byte_arr = io.BytesIO()
+                img_w_mask.save(img_byte_arr, format='PNG')
+                img_byte_arr = img_byte_arr.getvalue()
+                image_url = upload_to_oss(img_byte_arr, task_id, prefix="inpainting", extension="png")
+                
+                if not image_url:
+                    raise RuntimeError("Failed to upload image to OSS")
+                    
+            finally:
+                # Cleanup temporary files
+                for path in [tmp_image.name, tmp_mask.name, tmp_feather_mask.name]:
+                    try:
+                        if os.path.exists(path):
+                            os.unlink(path)
+                    except OSError:
+                        pass  # Ignore cleanup errors
 
         # Set default values if not provided
         if height is None:
@@ -136,70 +149,26 @@ class ModelCalls:
         if num_inference_steps is None:
             num_inference_steps = 30
 
-        # Call Flux inpainting API with retries
-        max_retries = 3
-        retry_delay = 1  # seconds
-        API_BASE = "https://api.us1.bfl.ai"
-        API_KEY = os.getenv('BFL_API_KEY')
+        print("image_url", image_url)
+        output = replicate.run(
+            "black-forest-labs/flux-fill-pro",
+            input={
+                "image": image_url,
+                "steps": num_inference_steps,
+                "prompt": prompt,
+                "guidance": guidance_scale,
+                "outpaint": "None",
+                "output_format": "png",
+                "safety_tolerance": 2,
+                "prompt_upsampling": False
+            }
+        )
+        print("output", output)
+        # Download the generated image
+        response = requests.get(output)
+        if response.status_code != 200:
+            raise RuntimeError(f"Failed to download image from replicate, status code: {response.status_code}")
         
-        for attempt in range(max_retries):
-            try:
-                # Submit the generation task
-                headers = {
-                    "Content-Type": "application/json",
-                    "x-key": API_KEY
-                }
-                
-                payload = {
-                    "image": image_url,
-                    "mask": mask_url,
-                    "prompt": prompt,
-                    "steps": num_inference_steps,
-                    "guidance": guidance_scale,
-                    "output_format": "png",
-                    "safety_tolerance": 2
-                }
-                
-                # Submit task
-                response = requests.post(
-                    f"{API_BASE}/v1/flux-pro-1.0-fill",
-                    headers=headers,
-                    json=payload
-                )
-                
-                if response.status_code == 200:
-                    task_data = response.json()
-                    task_id = task_data["id"]
-                    
-                    # Poll for results
-                    while True:
-                        result_response = requests.get(
-                            f"{API_BASE}/v1/get_result",
-                            params={"id": task_id},
-                            headers=headers
-                        )
-                        
-                        if result_response.status_code == 200:
-                            result_data = result_response.json()
-                            status = result_data["status"]
-                            
-                            if status == "Ready":
-                                result = result_data["result"]
-                                if result and 'sample' in result:
-                                    response = requests.get(result['sample'])
-                                    if response.status_code == 200:
-                                        break
-                            elif status in ["Error", "Request Moderated", "Content Moderated"]:
-                                raise RuntimeError(f"Task failed with status: {status}")
-                            else:
-                                time.sleep(1)  # Wait before polling again
-                    break
-                    
-            except Exception as e:
-                if attempt == max_retries - 1:  # Last attempt
-                    raise RuntimeError(f"Failed to call inpainting API after {max_retries} attempts") from e
-                time.sleep(retry_delay)
-                continue
         img = Image.open(io.BytesIO(response.content))
         return img
 
